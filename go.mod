@@ -1,0 +1,1 @@
+module avatars-service

@@ -1,0 +1,10 @@
+extends:
+  - recommended
+
+theme:
+  openapi:
+    schemaExpansionLevel: 3
+    generateCodeSamples:
+      languages:
+        - lang: curl
+        - lang: Go

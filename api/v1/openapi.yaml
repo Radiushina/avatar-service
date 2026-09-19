@@ -1,0 +1,308 @@
+openapi: 3.1.0
+
+info:
+  title: Avatars service API
+  version: 0.1.0
+  description: |
+    Client-server documentation API Avatars service.
+
+tags:
+  - name: Avatars
+    description: Methods for working with avatars
+  - name: User
+    description: Methods for handling user avatars
+
+paths:
+  /api/v1/avatars:
+    post:
+      summary: Upload avatar. Required, max size 10MB
+      tags:
+        - Avatars
+      parameters:
+        - name: X-User-ID
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  description: Avatar image, max 10MB
+                  type: string
+                  format: binary
+                  maxLength: 10485760
+      responses:
+        201:
+          description: 'Avatar uploaded successfully'
+          content:
+            application/json:
+              schema:
+                  $ref: './common/objects.yaml#/SuccessUploadAvatar'
+              example:
+                id: "1ca79251-f6e3-45a4-992f-404f6e4e13ed"
+                user_id: "user-123"
+                url: "https://avatars-service/1ca79251-f6e3-45a4-992f-404f6e4e13ed/avatar"
+                status: "processing"
+                created_at: "2024-01-01T00:00:00Z"
+        400:
+          description: 'Invalid file format'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ error, details ]
+                properties:
+                  error:
+                    type: string
+                  details:
+                    type: string
+              example:
+                error: "Invalid file format"
+                details: "Supported formats: jpeg, png, webp"
+        413:
+          $ref: '#/components/responses/413'
+        500:
+          $ref: '#/components/responses/500'
+
+  /api/v1/avatars/{avatar_id}:
+    get:
+      summary: Get avatar image
+      tags:
+        - Avatars
+      parameters:
+        - name: avatar_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [ "100x100", "300x300", "original" ]
+            default: original
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [ jpeg, png, webp ]
+      responses:
+        '200':
+          description: Avatar image
+          headers:
+            Cache-Control:
+              description: Cache duration
+              schema:
+                type: string
+                example: max-age=86400
+            ETag:
+              description: Content hash for conditional requests
+              schema:
+                type: string
+                example: '"a1b2c3d4e5f6"'
+            Content-Type:
+              description: Depends on format
+              schema:
+                type: string
+                enum: [ image/jpeg, image/png, image/webp ]
+            content:
+              image/jpeg:
+                schema:
+                  type: string
+                  format: binary
+              image/png:
+                schema:
+                  type: string
+                  format: binary
+              image/webp:
+                schema:
+                  type: string
+                  format: binary
+        '404':
+          description: Avatar not found
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ error ]
+                properties:
+                  error:
+                    type: string
+              example:
+                error: "Avatar not found"
+
+    delete:
+      summary: Deleting the profile picture
+      description: |
+        Soft delete in DB.
+        Asynchronous deletion from S3.
+      tags:
+        - Avatars
+      parameters:
+        - name: avatar_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-User-ID
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Avatar deleted successfully
+        '403':
+          description: Forbidden — can only delete own avatars
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ error, details ]
+                properties:
+                  error:
+                    type: string
+                  details:
+                    type: string
+              example:
+                error: "Forbidden"
+                details: "You can only delete your own avatars"
+        '404':
+          description: Avatar not found
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ error ]
+                properties:
+                  error:
+                    type: string
+              example:
+                error: "Avatar not found"
+
+
+  /api/v1/avatars/{avatar_id}/metadata:
+    get:
+      summary: Retrieving avatar metadata
+      tags:
+        - Avatars
+      parameters:
+        - name: avatar_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Avatar metadata
+          content:
+            application/json:
+              schema:
+                $ref: './common/objects.yaml#/AvatarMetadata'
+              example:
+                id: "1ca79251-f6e3-45a4-992f-404f6e4e13ed"
+                user_id: "user-123"
+                file_name: "avatar.jpg"
+                mime_type: "image/jpeg"
+                size: 1024000
+                dimensions:
+                  width: 1920
+                  height: 1080
+                thumbnails:
+                  - size: "100x100"
+                    url: "https://avatars-service/.../100x100"
+                  - size: "300x300"
+                    url: "https://avatars-service/.../300x300"
+                created_at: "2024-01-01T00:00:00Z"
+                updated_at: "2024-01-01T00:00:00Z"
+        '404':
+          description: Avatar not found
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ error ]
+                properties:
+                  error:
+                    type: string
+              example:
+                error: "Avatar not found"
+
+components:
+  responses:
+    '201':
+      description: 'Success upload avatar'
+
+    '400':
+      description: 'Invalid file format'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/UnsuccessfulResponse'
+          examples:
+            bind:
+              summary: Bind Example
+              value: { "error": "bind" }
+            validate:
+              summary: Validate Example
+              value: { "error": "validate" }
+
+    '404':
+      description: 'Объект не найден'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/UnsuccessfulResponse'
+          example: { "error": "not found" }
+
+    '413':
+      description: 'File too large'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/UnsuccessfulResponse'
+          example: { "error": "not found" }
+
+    '500':
+      description: 'Internal server error'
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [ error, max_size ]
+            properties:
+              error:
+                type: string
+              max_size:
+                type: integer
+                example: 10485760
+          example: { "error": "internal server error" }
+
+  schemas:
+    SuccessfulResponse:
+      type: object
+      properties:
+        code:
+          type: number
+          example: 200
+        success:
+          type: boolean
+          example: true
+
+    UnsuccessfulResponse:
+      type: object
+      required: [ error ]
+      properties:
+        error:
+          type: string

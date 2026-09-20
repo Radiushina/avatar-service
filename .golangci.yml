@@ -1,0 +1,266 @@
+version: "2"
+
+run:
+  issues-exit-code: 100
+  allow-parallel-runners: true
+output:
+  formats:
+    text:
+      path: stdout
+    junit-xml:
+      path: report.xml
+
+linters:
+  default: none
+  enable:
+    - asasalint
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - containedctx
+    - copyloopvar
+    - dupl
+    - durationcheck
+    - errcheck
+    - errname
+    - errorlint
+    #    - exhaustive
+    - exptostd
+    - forbidigo
+    - gocheckcompilerdirectives
+    - goconst
+    - gocritic
+    - gocyclo
+    - godox
+    - goheader
+    - gomodguard
+    - goprintffuncname
+    - gosec
+    - govet
+    - grouper
+    - importas
+    - ineffassign
+    - loggercheck
+    - maintidx
+    - makezero
+    - nilnesserr
+    - nilnil
+    - noctx
+    - nolintlint
+    - nosprintfhostport
+    - prealloc
+    - predeclared
+    - promlinter
+    - protogetter
+    - reassign
+    - revive
+    - rowserrcheck
+    - spancheck
+    - sqlclosecheck
+    - staticcheck
+    #    - tagliatelle
+    - testableexamples
+    - testifylint
+    - testpackage
+    - thelper
+    - tparallel
+    - unconvert
+    - unparam
+    - unused
+    - usestdlibvars
+    - usetesting
+    - wastedassign
+    - whitespace
+    - wrapcheck
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+      exclude-functions:
+        - (io.Seeker).Seek
+    exhaustive:
+      check:
+        - switch
+        - map
+    exhaustruct:
+      exclude:
+        - ^net/http.Client$
+        - ^net/http.Cookie$
+        - ^net/http.Request$
+        - ^net/http.Response$
+        - ^net/http.Server$
+        - ^net/http.Transport$
+        - ^net/url.URL$
+        - ^os/exec.Cmd$
+        - ^reflect.StructField$
+    funlen:
+      lines: 100
+      statements: 50
+    gocritic:
+      settings:
+        captLocal:
+          paramsOnly: false
+        underef:
+          skipRecvDeref: false
+    gomodguard:
+      blocked:
+        modules:
+          - github.com/golang/protobuf:
+              recommendations:
+                - google.golang.org/protobuf
+              reason: see https://developers.google.com/protocol-buffers/docs/reference/go/faq#modules
+          - github.com/satori/go.uuid:
+              recommendations:
+                - github.com/google/uuid
+              reason: satori's package is not maintained
+          - github.com/gofrs/uuid:
+              recommendations:
+                - github.com/google/uuid
+              reason: gofrs' package is not go module
+          - github.com/pkg/errors:
+              recommendations:
+                - errors
+                - fmt
+              reason: pkg/errors is in public archive
+    gosec:
+      excludes:
+        - G102
+        - G108
+        - G115
+    govet:
+      disable:
+        - fieldalignment
+        - shadow
+      enable-all: true
+    nakedret:
+      max-func-lines: 0
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+      allow-no-explanation:
+        - funlen
+        - gocognit
+        - tagliatelle
+        - musttag
+    revive:
+      enable-all-rules: true
+      rules:
+        - name: unhandled-error
+          arguments:
+            - fmt.Printf
+            - io.Seeker.Seek
+            - bytes.Buffer.Write
+            - bytes.Buffer.WriteString
+            - strings.Builder.WriteString
+            - bytes.Buffer.WriteByte
+            - strings.Builder.WriteByte
+          severity: warning
+          disabled: false
+        - name: add-constant
+          disabled: true
+        - name: line-length-limit
+          disabled: true
+        - name: max-public-structs
+          disabled: true
+        - name: bare-return
+          disabled: true
+        - name: function-length
+          disabled: true
+        - name: cognitive-complexity
+          disabled: true
+        - name: argument-limit
+          disabled: true
+        - name: cyclomatic
+          disabled: true
+        - name: nested-structs
+          disabled: true
+        - name: function-result-limit
+          disabled: true
+        - name: struct-tag
+          arguments: [ "json,inline", "bson,outline,gnu" ]
+          severity: warning
+          disabled: true
+    rowserrcheck:
+      packages:
+        - github.com/jackc/pgx
+    spancheck:
+      checks:
+        - end
+    staticcheck:
+      checks:
+        - all
+        - -S1019
+        - -ST1005
+        - -QF1008
+    thelper:
+      test:
+        first: true
+        name: true
+        begin: false
+      benchmark:
+        first: true
+        name: true
+        begin: true
+    wrapcheck:
+      ignore-sigs:
+        - .Error(
+        - .Errorf(
+        - .ErrorsJoin(
+        - errors.New(
+        - errors.Unwrap(
+        - errors.Join(
+        - .Wrap(
+        - .Wrapf(
+        - .WithMessage(
+        - .WithMessagef(
+        - .WithStack(
+      ignore-package-globs:
+        - github.com/labstack/echo/*
+        - tik.r314.ru/golang/lib/http-responses
+        - google.golang.org/grpc/status
+        - github.com/ogen-go/ogen/*
+        - tik.r314.ru/radio/chat/pkg/errconstructor
+        - tik.r314.ru/radio/chat/internal/entity/errs
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - gocritic
+        source: //noinspection
+      - linters:
+          - bodyclose
+          - containedctx
+          - dupl
+          - errcheck
+          - funlen
+          - goconst
+          - gosec
+          - ireturn
+          - maintidx
+          - noctx
+          - revive
+          - wrapcheck
+        path: _test\.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+
+issues:
+  max-same-issues: 50
+
+formatters:
+  enable:
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

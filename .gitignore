@@ -1,0 +1,31 @@
+# IDE
+.idea
+.vscode
+.DS_Store
+
+# Config
+.env
+
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.tar.gz
+*.xlsx
+
+# Test binary, built with `go test -c`
+*.test
+*.csv
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+output/allure-results
+output/allure-result
+output/allure-report
+*.html
+report.xml
+
+# Dependency directories (remove the comment below to include it)
+vendor/

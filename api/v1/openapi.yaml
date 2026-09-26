@@ -239,6 +239,126 @@ paths:
               example:
                 error: "Avatar not found"
 
+  /api/v1/users/{user_id}/avatar:
+    get:
+      summary: Get the user's current avatar
+      description: Latest non-deleted avatar of the user.
+      tags:
+        - User
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-User-ID
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Current avatar
+          content:
+            application/json:
+              schema:
+                $ref: './common/objects.yaml#/Avatar'
+              example:
+                id: "1ca79251-f6e3-45a4-992f-404f6e4e13ed"
+                user_id: "user-123"
+                url: "https://avatars-service/1ca79251-f6e3-45a4-992f-404f6e4e13ed/avatar"
+                status: "ready"
+                created_at: "2024-01-01T00:00:00Z"
+        '404':
+          description: Avatar not found
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ error ]
+                properties:
+                  error:
+                    type: string
+              example:
+                error: "Avatar not found"
+
+    delete:
+      summary: Delete the user's current avatar
+      description: |
+        Soft delete in DB.
+        Asynchronous deletion from S3.
+      tags:
+        - User
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-User-ID
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Avatar deleted successfully
+        '403':
+          description: Forbidden — can only delete own avatars
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ error, details ]
+                properties:
+                  error:
+                    type: string
+                  details:
+                    type: string
+              example:
+                error: "Forbidden"
+                details: "You can only delete your own avatars"
+        '404':
+          description: Avatar not found
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ error ]
+                properties:
+                  error:
+                    type: string
+              example:
+                error: "Avatar not found"
+
+  /api/v1/users/{user_id}/avatars:
+    get:
+      summary: List user avatars
+      description: Non-deleted avatars of the user, newest first.
+      tags:
+        - User
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: User avatars
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './common/objects.yaml#/Avatar'
+              example:
+                - id: "1ca79251-f6e3-45a4-992f-404f6e4e13ed"
+                  user_id: "user-123"
+                  url: "https://avatars-service/1ca79251-f6e3-45a4-992f-404f6e4e13ed/avatar"
+                  status: "ready"
+                  created_at: "2024-01-01T00:00:00Z"
+
 components:
   responses:
     '201':

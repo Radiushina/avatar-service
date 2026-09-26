@@ -90,3 +90,30 @@ AvatarThumbnail:
       type: string
       format: uri
 
+Avatar:
+  type: object
+  required: [id, user_id, url, status, created_at]
+  properties:
+    id:
+      description: 'Avatar ID'
+      type: string
+      format: uuid
+      example: 1ca79251-f6e3-45a4-992f-404f6e4e13ed
+    user_id:
+      description: 'User ID'
+      type: string
+      example: user-123
+    url:
+      description: 'Link to download the avatar'
+      type: string
+      example: https://avatars-service/1ca79251-f6e3-45a4-992f-404f6e4e13ed/avatar
+    status:
+      description: 'Processing status'
+      type: string
+      example: ready
+    created_at:
+      description: 'Creation date'
+      type: string
+      format: date-time
+      example: "2024-01-01T00:00:00Z"
+

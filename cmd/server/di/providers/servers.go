@@ -8,6 +8,7 @@ import (
 
 	"github.com/Radiushina/avatar-service/internal/config"
 	"github.com/Radiushina/avatar-service/internal/domains/avatars"
+	applogger "github.com/Radiushina/avatar-service/internal/domains/logger"
 	"github.com/labstack/echo/v5"
 	"go.uber.org/zap"
 )
@@ -17,12 +18,12 @@ type Servers struct {
 	log  *zap.Logger
 }
 
-func NewHTTPServer(cfg *config.Config, avatar avatars.ServiceProvider) *http.Server {
+func NewHTTPServer(cfg *config.Config, log *zap.Logger, avatar avatars.ServiceProvider) *http.Server {
 	e := echo.New()
-	avatars.NewAvatarRouter(e.Group("/api/v1"), avatar)
+	avatars.NewAvatarRouter(e.Group("/api/v1"), avatar, log)
 	return &http.Server{
 		Addr:    cfg.Server.HTTP.Address,
-		Handler: e,
+		Handler: applogger.LoggingMiddleware(log, e),
 	}
 }
 

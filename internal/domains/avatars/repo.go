@@ -2,7 +2,9 @@ package avatars
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/Radiushina/avatar-service/internal/entity"
 	"github.com/doug-martin/goqu/v9"
@@ -11,14 +13,20 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+type ObjectStore interface {
+	Get(ctx context.Context, key string) ([]byte, error)
+}
+
 type Repo struct {
 	db      *pgxpool.Pool
+	objects ObjectStore
 	builder goqu.DialectWrapper
 }
 
-func NewAvatarRepo(db *pgxpool.Pool) *Repo {
+func NewAvatarRepo(db *pgxpool.Pool, objects ObjectStore) *Repo {
 	return &Repo{
 		db:      db,
+		objects: objects,
 		builder: goqu.Dialect("postgres"),
 	}
 }
@@ -30,9 +38,50 @@ func (r *Repo) Upload() error {
 	return nil
 }
 
-func (r *Repo) SelectById() error {
+func (r *Repo) SelectById(ctx context.Context, id string) (entity.AvatarObject, error) {
+	query, args, err := r.avatarByID(id).ToSQL()
+	if err != nil {
+		return entity.AvatarObject{}, fmt.Errorf("select avatar: %w", err)
+	}
 
-	return nil
+	var (
+		obj    entity.AvatarObject
+		thumbs []byte
+	)
+	err = r.db.QueryRow(ctx, query, args...).Scan(&obj.MimeType, &obj.S3Key, &thumbs)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return entity.AvatarObject{}, ErrNotFound
+	}
+	if err != nil {
+		return entity.AvatarObject{}, fmt.Errorf("select avatar: %w", err)
+	}
+
+	obj.ID = id
+	// ponytail: thumbnail_s3_keys is {"100x100":"s3-key","300x300":"s3-key"}.
+	// An array of objects needs a new decoder.
+	if len(thumbs) > 0 {
+		if err := json.Unmarshal(thumbs, &obj.Thumbnails); err != nil {
+			return entity.AvatarObject{}, fmt.Errorf("decode thumbnail keys: %w", err)
+		}
+	}
+	return obj, nil
+}
+
+func (r *Repo) GetObject(ctx context.Context, key string) ([]byte, error) {
+	if r.objects == nil {
+		return nil, errors.New("object storage is not configured")
+	}
+	return r.objects.Get(ctx, key)
+}
+
+func (r *Repo) avatarByID(id string) *goqu.SelectDataset {
+	return r.builder.From(avatarsTable).
+		Prepared(true).
+		Select("mime_type", "s3_key", "thumbnail_s3_keys").
+		Where(
+			goqu.C("id").Eq(goqu.Cast(goqu.V(id), "uuid")),
+			goqu.C("deleted_at").IsNull(),
+		)
 }
 
 func (r *Repo) DeleteById() error {

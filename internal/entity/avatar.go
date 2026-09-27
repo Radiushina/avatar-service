@@ -1,6 +1,9 @@
 package entity
 
-import "time"
+import (
+	"errors"
+	"time"
+)
 
 type MimeType string
 type ThumbnailSize string
@@ -10,8 +13,9 @@ const (
 	ImagePng  MimeType = "image/png"
 	ImageWebp MimeType = "image/webp"
 
-	ThumbnailSmol   ThumbnailSize = "100x100"
-	ThumbnailMedium ThumbnailSize = "300x300"
+	ThumbnailOriginal ThumbnailSize = "original"
+	ThumbnailSmol     ThumbnailSize = "100x100"
+	ThumbnailMedium   ThumbnailSize = "300x300"
 )
 
 type Avatar struct {
@@ -42,4 +46,37 @@ type Dimensions struct {
 type Thumbnail struct {
 	Size ThumbnailSize `json:"size"`
 	URL  string        `json:"url"`
+}
+
+type AvatarReq struct {
+	AvatarID string `param:"avatar_id" validate:"required"`
+	Size     string `query:"size" validate:"omitempty,oneof=original 100x100 300x300"`
+	Format   string `query:"format" validate:"omitempty,oneof=jpeg png webp"`
+}
+
+type AvatarObject struct {
+	ID         string
+	MimeType   string
+	S3Key      string
+	Thumbnails map[string]string
+}
+
+type S3AvatarFile struct {
+	ContentType string
+	Body        []byte
+	ETag        string
+}
+
+func (r AvatarReq) Validate() error {
+	switch r.Size {
+	case "", string(ThumbnailOriginal), string(ThumbnailSmol), string(ThumbnailMedium):
+	default:
+		return errors.New("invalid size")
+	}
+	switch r.Format {
+	case "", "jpeg", "png", "webp":
+	default:
+		return errors.New("invalid format")
+	}
+	return nil
 }

@@ -14,6 +14,8 @@ var (
 
 	InfraSet = wire.NewSet(
 		providers.NewPostgres,
+		providers.NewS3Store,
+		wire.Bind(new(avatars.ObjectStore), new(*providers.S3Store)),
 		avatars.NewAvatarRepo,
 		wire.Bind(new(avatars.RepoProvider), new(*avatars.Repo)),
 	)

@@ -20,7 +20,7 @@ type (
 		SelectById(ctx context.Context, id string) (entity.AvatarObject, error)
 		GetObject(ctx context.Context, key string) ([]byte, error)
 		DeleteById() error
-		SelectAvatarMeta() error
+		SelectAvatarMeta(ctx context.Context, id string) (entity.AvatarMetadata, error)
 		SelectCurrent(ctx context.Context, userID string) (entity.Avatar, error)
 		DeleteCurrent(ctx context.Context, userID string) error
 		SelectUserAvatars(ctx context.Context, userID string) ([]entity.Avatar, error)
@@ -98,9 +98,15 @@ func (s *Service) DeleteById() error {
 	return nil
 }
 
-func (s *Service) SelectAvatarMeta() error {
-
-	return nil
+func (s *Service) SelectAvatarMeta(ctx context.Context, id string) (entity.AvatarMetadata, error) {
+	meta, err := s.repo.SelectAvatarMeta(ctx, id)
+	if err != nil {
+		return entity.AvatarMetadata{}, err
+	}
+	for i := range meta.Thumbnails {
+		meta.Thumbnails[i].URL = avatarURLPrefix + meta.ID + "?size=" + string(meta.Thumbnails[i].Size)
+	}
+	return meta, nil
 }
 
 func (s *Service) SelectCurrent(ctx context.Context, userID string) (entity.Avatar, error) {

@@ -27,15 +27,15 @@ type Avatar struct {
 }
 
 type AvatarMetadata struct {
-	ID         string      `json:"id" db:"avatars.id"`
-	UserID     string      `json:"user_id" db:"avatars.user_id"`
-	FileName   string      `json:"file_name" db:"avatars.file_name"`
-	MimeType   MimeType    `json:"mime_type" db:"avatars.mime_type"`
-	Size       int64       `json:"size_bytes" db:"size_bytes"`
+	ID         string      `json:"id"`
+	UserID     string      `json:"user_id"`
+	FileName   string      `json:"file_name"`
+	MimeType   MimeType    `json:"mime_type"`
+	Size       int64       `json:"size"`
 	Dimensions Dimensions  `json:"dimensions"`
 	Thumbnails []Thumbnail `json:"thumbnails"`
-	CreatedAt  string      `json:"created_at" db:"created_at"`
-	UpdatedAt  string      `json:"updated_at" db:"updated_at"`
+	CreatedAt  time.Time   `json:"created_at"`
+	UpdatedAt  time.Time   `json:"updated_at"`
 }
 
 type Dimensions struct {

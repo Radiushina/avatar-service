@@ -89,9 +89,69 @@ func (r *Repo) DeleteById() error {
 	return nil
 }
 
-func (r *Repo) SelectAvatarMeta() error {
+func (r *Repo) SelectAvatarMeta(ctx context.Context, id string) (entity.AvatarMetadata, error) {
+	query, args, err := r.builder.From(avatarsTable).
+		Prepared(true).
+		Select(
+			"id",
+			"user_id",
+			"file_name",
+			"mime_type",
+			"size_bytes",
+			"thumbnail_s3_keys",
+			"created_at",
+			"updated_at",
+		).
+		Where(
+			goqu.C("id").Eq(goqu.Cast(goqu.V(id), "uuid")),
+			goqu.C("deleted_at").IsNull(),
+		).
+		ToSQL()
+	if err != nil {
+		return entity.AvatarMetadata{}, fmt.Errorf("select avatar meta: %w", err)
+	}
 
-	return nil
+	var (
+		meta   entity.AvatarMetadata
+		thumbs []byte
+	)
+	err = r.db.QueryRow(ctx, query, args...).Scan(
+		&meta.ID,
+		&meta.UserID,
+		&meta.FileName,
+		&meta.MimeType,
+		&meta.Size,
+		&thumbs,
+		&meta.CreatedAt,
+		&meta.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return entity.AvatarMetadata{}, ErrNotFound
+	}
+	if err != nil {
+		return entity.AvatarMetadata{}, fmt.Errorf("select avatar meta: %w", err)
+	}
+
+	keys := map[string]string{}
+	if len(thumbs) > 0 {
+		if err := json.Unmarshal(thumbs, &keys); err != nil {
+			return entity.AvatarMetadata{}, fmt.Errorf("decode thumbnail keys: %w", err)
+		}
+	}
+	meta.Thumbnails = thumbnailsFromKeys(keys)
+	return meta, nil
+}
+
+func thumbnailsFromKeys(keys map[string]string) []entity.Thumbnail {
+	order := []entity.ThumbnailSize{entity.ThumbnailSmol, entity.ThumbnailMedium}
+	out := make([]entity.Thumbnail, 0, len(order))
+	for _, size := range order {
+		if keys[string(size)] == "" {
+			continue
+		}
+		out = append(out, entity.Thumbnail{Size: size})
+	}
+	return out
 }
 
 func (r *Repo) SelectCurrent(ctx context.Context, userID string) (entity.Avatar, error) {
@@ -111,7 +171,6 @@ func (r *Repo) SelectCurrent(ctx context.Context, userID string) (entity.Avatar,
 	return avatar, nil
 }
 
-// ponytail: soft-delete only; S3 object removal waits until an object client exists.
 func (r *Repo) DeleteCurrent(ctx context.Context, userID string) error {
 	current, err := r.SelectCurrent(ctx, userID)
 	if err != nil {

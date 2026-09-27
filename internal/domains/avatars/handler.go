@@ -23,7 +23,7 @@ type (
 		Upload() error
 		SelectById(ctx context.Context, req entity.AvatarReq) (entity.S3AvatarFile, error)
 		DeleteById() error
-		SelectAvatarMeta() error
+		SelectAvatarMeta(ctx context.Context, id string) (entity.AvatarMetadata, error)
 		SelectCurrent(ctx context.Context, userID string) (entity.Avatar, error)
 		DeleteCurrent(ctx context.Context, actorID, userID string) error
 		SelectUserAvatars(ctx context.Context, userID string) ([]entity.Avatar, error)
@@ -92,9 +92,17 @@ func (h *avatarRouter) deleteAvatarById(ctx *echo.Context) error {
 	return nil
 }
 
-func (h *avatarRouter) getAvatarMeta(ctx *echo.Context) error {
+func (h *avatarRouter) getAvatarMeta(c *echo.Context) error {
+	avatarID, err := pathAvatarID(c)
+	if err != nil || avatarID == "" {
+		return err
+	}
 
-	return nil
+	meta, err := h.avatar.SelectAvatarMeta(c.Request().Context(), avatarID)
+	if err != nil {
+		return h.writeServiceErr(c, err)
+	}
+	return c.JSON(http.StatusOK, meta)
 }
 
 func (h *avatarRouter) getUserAvatar(c *echo.Context) error {

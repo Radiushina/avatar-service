@@ -1,8 +1,15 @@
 package avatars
 
 import (
+	"context"
+	"errors"
+	"net/http"
+
+	"github.com/Radiushina/avatar-service/internal/entity"
 	"github.com/labstack/echo/v5"
 )
+
+const userIDHeader = "X-User-ID"
 
 type (
 	avatarRouter struct {
@@ -14,9 +21,9 @@ type (
 		SelectById() error
 		DeleteById() error
 		SelectAvatarMeta() error
-		SelectCurrent() error
-		DeleteCurrent() error
-		SelectUserAvatars() error
+		SelectCurrent(ctx context.Context, userID string) (entity.Avatar, error)
+		DeleteCurrent(ctx context.Context, actorID, userID string) error
+		SelectUserAvatars(ctx context.Context, userID string) ([]entity.Avatar, error)
 	}
 )
 
@@ -60,17 +67,74 @@ func (h *avatarRouter) getAvatarMeta(ctx *echo.Context) error {
 	return nil
 }
 
-func (h *avatarRouter) getUserAvatar(ctx *echo.Context) error {
+func (h *avatarRouter) getUserAvatar(c *echo.Context) error {
+	userID, err := pathUserID(c)
+	if err != nil || userID == "" {
+		return err
+	}
+	if c.Request().Header.Get(userIDHeader) == "" {
+		return c.JSON(http.StatusBadRequest, apiError{Error: "X-User-ID is required"})
+	}
 
-	return nil
+	avatar, err := h.avatar.SelectCurrent(c.Request().Context(), userID)
+	if err != nil {
+		return writeServiceErr(c, err)
+	}
+	return c.JSON(http.StatusOK, avatar)
 }
 
-func (h *avatarRouter) deleteUserAvatar(ctx *echo.Context) error {
+func (h *avatarRouter) deleteUserAvatar(c *echo.Context) error {
+	userID, err := pathUserID(c)
+	if err != nil || userID == "" {
+		return err
+	}
+	actorID := c.Request().Header.Get(userIDHeader)
+	if actorID == "" {
+		return c.JSON(http.StatusBadRequest, apiError{Error: "X-User-ID is required"})
+	}
 
-	return nil
+	if err := h.avatar.DeleteCurrent(c.Request().Context(), actorID, userID); err != nil {
+		return writeServiceErr(c, err)
+	}
+	return c.NoContent(http.StatusNoContent)
 }
 
-func (h *avatarRouter) listUserAvatars(ctx *echo.Context) error {
+func (h *avatarRouter) listUserAvatars(c *echo.Context) error {
+	userID, err := pathUserID(c)
+	if err != nil || userID == "" {
+		return err
+	}
 
-	return nil
+	list, err := h.avatar.SelectUserAvatars(c.Request().Context(), userID)
+	if err != nil {
+		return writeServiceErr(c, err)
+	}
+	return c.JSON(http.StatusOK, list)
+}
+
+type apiError struct {
+	Error   string `json:"error"`
+	Details string `json:"details,omitempty"`
+}
+
+func pathUserID(c *echo.Context) (string, error) {
+	userID := c.Param("user_id")
+	if userID == "" {
+		return "", c.JSON(http.StatusBadRequest, apiError{Error: "user_id is required"})
+	}
+	return userID, nil
+}
+
+func writeServiceErr(c *echo.Context, err error) error {
+	switch {
+	case errors.Is(err, ErrNotFound):
+		return c.JSON(http.StatusNotFound, apiError{Error: "Avatar not found"})
+	case errors.Is(err, ErrForbidden):
+		return c.JSON(http.StatusForbidden, apiError{
+			Error:   "Forbidden",
+			Details: "You can only delete your own avatars",
+		})
+	default:
+		return c.JSON(http.StatusInternalServerError, apiError{Error: "internal error"})
+	}
 }

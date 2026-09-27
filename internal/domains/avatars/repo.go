@@ -1,8 +1,13 @@
 package avatars
 
 import (
+	"context"
+	"errors"
+
+	"github.com/Radiushina/avatar-service/internal/entity"
 	"github.com/doug-martin/goqu/v9"
 	_ "github.com/doug-martin/goqu/v9/dialect/postgres"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -18,9 +23,7 @@ func NewAvatarRepo(db *pgxpool.Pool) *Repo {
 	}
 }
 
-var (
-	usersTable = goqu.T("avatars")
-)
+var avatarsTable = goqu.T("avatars")
 
 func (r *Repo) Upload() error {
 
@@ -42,17 +45,88 @@ func (r *Repo) SelectAvatarMeta() error {
 	return nil
 }
 
-func (r *Repo) SelectCurrent() error {
+func (r *Repo) SelectCurrent(ctx context.Context, userID string) (entity.Avatar, error) {
+	sql, args, err := r.avatarsByUser(userID).Limit(1).ToSQL()
+	if err != nil {
+		return entity.Avatar{}, err
+	}
 
+	var avatar entity.Avatar
+	err = r.db.QueryRow(ctx, sql, args...).Scan(&avatar.ID, &avatar.UserID, &avatar.Status, &avatar.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return entity.Avatar{}, ErrNotFound
+	}
+	if err != nil {
+		return entity.Avatar{}, err
+	}
+	return avatar, nil
+}
+
+// ponytail: soft-delete only; S3 object removal waits until an object client exists.
+func (r *Repo) DeleteCurrent(ctx context.Context, userID string) error {
+	current, err := r.SelectCurrent(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	sql, args, err := r.builder.Update(avatarsTable).
+		Prepared(true).
+		Set(goqu.Record{
+			"deleted_at": goqu.L("now()"),
+			"updated_at": goqu.L("now()"),
+		}).
+		Where(
+			goqu.C("id").Eq(current.ID),
+			goqu.C("deleted_at").IsNull(),
+		).
+		ToSQL()
+	if err != nil {
+		return err
+	}
+
+	tag, err := r.db.Exec(ctx, sql, args...)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
 	return nil
 }
 
-func (r *Repo) DeleteCurrent() error {
+func (r *Repo) SelectUserAvatars(ctx context.Context, userID string) ([]entity.Avatar, error) {
+	sql, args, err := r.avatarsByUser(userID).ToSQL()
+	if err != nil {
+		return nil, err
+	}
 
-	return nil
+	rows, err := r.db.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	list := make([]entity.Avatar, 0)
+	for rows.Next() {
+		var avatar entity.Avatar
+		if err := rows.Scan(&avatar.ID, &avatar.UserID, &avatar.Status, &avatar.CreatedAt); err != nil {
+			return nil, err
+		}
+		list = append(list, avatar)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return list, nil
 }
 
-func (r *Repo) SelectUserAvatars() error {
-
-	return nil
+func (r *Repo) avatarsByUser(userID string) *goqu.SelectDataset {
+	return r.builder.From(avatarsTable).
+		Prepared(true).
+		Select("id", "user_id", "processing_status", "created_at").
+		Where(
+			goqu.C("user_id").Eq(userID),
+			goqu.C("deleted_at").IsNull(),
+		).
+		Order(goqu.C("created_at").Desc())
 }

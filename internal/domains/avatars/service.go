@@ -6,17 +6,28 @@ import (
 	"fmt"
 
 	"github.com/Radiushina/avatar-service/internal/entity"
+	"github.com/google/uuid"
 )
 
-const avatarURLPrefix = "/api/v1/avatars/"
+const (
+	avatarURLPrefix = "/api/v1/avatars/"
+	maxAvatarBytes  = 10 << 20
+)
 
 type (
 	Service struct {
 		repo RepoProvider
 	}
 
+	UploadInput struct {
+		UserID      string
+		FileName    string
+		ContentType string
+		Body        []byte
+	}
+
 	RepoProvider interface {
-		Upload() error
+		Upload(ctx context.Context, id, userID, fileName, mimeType, s3Key string, size int64, body []byte) (entity.Avatar, error)
 		SelectById(ctx context.Context, id string) (entity.AvatarObject, error)
 		GetObject(ctx context.Context, key string) ([]byte, error)
 		DeleteById() error
@@ -33,9 +44,44 @@ func NewService(repo RepoProvider) *Service {
 	}
 }
 
-func (s *Service) Upload() error {
+func (s *Service) Upload(ctx context.Context, in UploadInput) (entity.Avatar, error) {
+	if in.UserID == "" {
+		return entity.Avatar{}, fmt.Errorf("%w: user_id is required", ErrInvalid)
+	}
+	if in.FileName == "" {
+		return entity.Avatar{}, fmt.Errorf("%w: file name is required", ErrInvalid)
+	}
+	if len(in.Body) == 0 {
+		return entity.Avatar{}, fmt.Errorf("%w: empty file", ErrInvalid)
+	}
+	if len(in.Body) > maxAvatarBytes {
+		return entity.Avatar{}, ErrTooLarge
+	}
+	mime := normalizeMime(in.ContentType)
+	if mime == "" {
+		return entity.Avatar{}, fmt.Errorf("%w: supported formats: jpeg, png, webp", ErrInvalid)
+	}
 
-	return nil
+	id := uuid.NewString()
+	key := fmt.Sprintf("avatars/%s/%s/original", in.UserID, id)
+	avatar, err := s.repo.Upload(ctx, id, in.UserID, in.FileName, mime, key, int64(len(in.Body)), in.Body)
+	if err != nil {
+		return entity.Avatar{}, err
+	}
+	return withAvatarURL(avatar), nil
+}
+
+func normalizeMime(contentType string) string {
+	switch contentType {
+	case string(entity.ImageJpeg), "image/jpg":
+		return string(entity.ImageJpeg)
+	case string(entity.ImagePng):
+		return string(entity.ImagePng)
+	case string(entity.ImageWebp):
+		return string(entity.ImageWebp)
+	default:
+		return ""
+	}
 }
 
 func (s *Service) SelectById(ctx context.Context, req entity.AvatarReq) (entity.S3AvatarFile, error) {

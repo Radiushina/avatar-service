@@ -9,6 +9,7 @@ import (
 	"github.com/Radiushina/avatar-service/internal/config"
 	"github.com/Radiushina/avatar-service/internal/domains/avatars"
 	applogger "github.com/Radiushina/avatar-service/internal/domains/logger"
+	"github.com/Radiushina/avatar-service/internal/domains/webui"
 	"github.com/labstack/echo/v5"
 	"go.uber.org/zap"
 )
@@ -18,13 +19,16 @@ type Servers struct {
 	log  *zap.Logger
 }
 
-func NewHTTPServer(cfg *config.Config, log *zap.Logger, avatar avatars.ServiceProvider) *http.Server {
+func NewHTTPServer(cfg *config.Config, log *zap.Logger, avatar avatars.ServiceProvider) (*http.Server, error) {
 	e := echo.New()
 	avatars.NewAvatarRouter(e.Group("/api/v1"), avatar, log)
+	if err := webui.NewRouter(e.Group("/web"), avatar, "web/templates", log); err != nil {
+		return nil, err
+	}
 	return &http.Server{
 		Addr:    cfg.Server.HTTP.Address,
 		Handler: applogger.LoggingMiddleware(log, e),
-	}
+	}, nil
 }
 
 func NewServers(httpServer *http.Server, log *zap.Logger) *Servers {

@@ -15,6 +15,7 @@ import (
 
 type ObjectStore interface {
 	Get(ctx context.Context, key string) ([]byte, error)
+	Put(ctx context.Context, key, contentType string, body []byte) error
 }
 
 type Repo struct {
@@ -33,9 +34,37 @@ func NewAvatarRepo(db *pgxpool.Pool, objects ObjectStore) *Repo {
 
 var avatarsTable = goqu.T("avatars")
 
-func (r *Repo) Upload() error {
+func (r *Repo) Upload(ctx context.Context, id, userID, fileName, mimeType, s3Key string, size int64, body []byte) (entity.Avatar, error) {
+	if r.objects == nil {
+		return entity.Avatar{}, errors.New("object storage is not configured")
+	}
+	if err := r.objects.Put(ctx, s3Key, mimeType, body); err != nil {
+		return entity.Avatar{}, err
+	}
 
-	return nil
+	sql, args, err := r.builder.Insert(avatarsTable).
+		Prepared(true).
+		Rows(goqu.Record{
+			"id":                id,
+			"user_id":           userID,
+			"file_name":         fileName,
+			"mime_type":         mimeType,
+			"size_bytes":        size,
+			"s3_key":            s3Key,
+			"upload_status":     "uploaded",
+			"processing_status": "processing",
+		}).
+		Returning("id", "user_id", "processing_status", "created_at").
+		ToSQL()
+	if err != nil {
+		return entity.Avatar{}, fmt.Errorf("insert avatar: %w", err)
+	}
+
+	var avatar entity.Avatar
+	if err := r.db.QueryRow(ctx, sql, args...).Scan(&avatar.ID, &avatar.UserID, &avatar.Status, &avatar.CreatedAt); err != nil {
+		return entity.Avatar{}, fmt.Errorf("insert avatar: %w", err)
+	}
+	return avatar, nil
 }
 
 func (r *Repo) SelectById(ctx context.Context, id string) (entity.AvatarObject, error) {

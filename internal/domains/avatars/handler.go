@@ -3,6 +3,7 @@ package avatars
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 
 	"github.com/Radiushina/avatar-service/internal/entity"
@@ -20,7 +21,7 @@ type (
 	}
 
 	ServiceProvider interface {
-		Upload() error
+		Upload(ctx context.Context, in UploadInput) (entity.Avatar, error)
 		SelectById(ctx context.Context, req entity.AvatarReq) (entity.S3AvatarFile, error)
 		DeleteById() error
 		SelectAvatarMeta(ctx context.Context, id string) (entity.AvatarMetadata, error)
@@ -51,9 +52,52 @@ func NewAvatarRouter(group *echo.Group, avatar ServiceProvider, log *zap.Logger)
 	}
 }
 
-func (h *avatarRouter) uploadFile(ctx *echo.Context) error {
+func (h *avatarRouter) uploadFile(c *echo.Context) error {
+	userID := c.Request().Header.Get(userIDHeader)
+	if userID == "" {
+		return c.JSON(http.StatusBadRequest, apiError{Error: "X-User-ID is required"})
+	}
 
-	return nil
+	file, err := c.FormFile("file")
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, apiError{
+			Error:   "Invalid file format",
+			Details: "Supported formats: jpeg, png, webp",
+		})
+	}
+
+	src, err := file.Open()
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, apiError{Error: "Invalid file format"})
+	}
+	defer src.Close()
+
+	body, err := io.ReadAll(io.LimitReader(src, maxAvatarBytes+1))
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, apiError{Error: "Invalid file format"})
+	}
+	if len(body) > maxAvatarBytes {
+		return c.JSON(http.StatusRequestEntityTooLarge, map[string]any{
+			"error":    "File too large",
+			"max_size": maxAvatarBytes,
+		})
+	}
+
+	contentType := file.Header.Get("Content-Type")
+	if contentType == "" || contentType == "application/octet-stream" {
+		contentType = http.DetectContentType(body)
+	}
+
+	avatar, err := h.avatar.Upload(c.Request().Context(), UploadInput{
+		UserID:      userID,
+		FileName:    file.Filename,
+		ContentType: contentType,
+		Body:        body,
+	})
+	if err != nil {
+		return h.writeServiceErr(c, err)
+	}
+	return c.JSON(http.StatusCreated, avatar)
 }
 
 func (h *avatarRouter) getAvatarById(c *echo.Context) error {
@@ -182,6 +226,16 @@ func (h *avatarRouter) writeServiceErr(c *echo.Context, err error) error {
 		return c.JSON(http.StatusForbidden, apiError{
 			Error:   "Forbidden",
 			Details: "You can only delete your own avatars",
+		})
+	case errors.Is(err, ErrTooLarge):
+		return c.JSON(http.StatusRequestEntityTooLarge, map[string]any{
+			"error":    "File too large",
+			"max_size": maxAvatarBytes,
+		})
+	case errors.Is(err, ErrInvalid):
+		return c.JSON(http.StatusBadRequest, apiError{
+			Error:   "Invalid file format",
+			Details: err.Error(),
 		})
 	default:
 		h.log.Error("request failed",

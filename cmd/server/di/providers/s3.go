@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -36,6 +37,19 @@ func NewS3Store(cfg *config.Config) *S3Store {
 			UsePathStyle: cfg.S3.PathStyle,
 		}),
 	}
+}
+
+func (s *S3Store) Put(ctx context.Context, key, contentType string, body []byte) error {
+	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:      aws.String(s.bucket),
+		Key:         aws.String(key),
+		Body:        bytes.NewReader(body),
+		ContentType: aws.String(contentType),
+	})
+	if err != nil {
+		return fmt.Errorf("put avatar object: %w", err)
+	}
+	return nil
 }
 
 func (s *S3Store) Get(ctx context.Context, key string) (body []byte, err error) {

@@ -11,5 +11,6 @@ FROM alpine:latest AS server
 RUN apk --no-cache add ca-certificates tzdata
 WORKDIR /app
 COPY --from=builder /app/server .
+COPY --from=builder /app/web ./web
 EXPOSE 8080
 CMD ["./server"]

@@ -34,7 +34,12 @@ func InjectApp(ctx context.Context) (*App, func(), error) {
 	s3Store := providers.NewS3Store(config)
 	repo := avatars.NewAvatarRepo(pool, s3Store)
 	service := avatars.NewService(repo)
-	server := providers.NewHTTPServer(config, logger, service)
+	server, err := providers.NewHTTPServer(config, logger, service)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	servers := providers.NewServers(server, logger)
 	app := &App{
 		cfg:    config,

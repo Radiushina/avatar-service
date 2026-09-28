@@ -256,7 +256,7 @@ func TestInternalErrorIsLogged(t *testing.T) {
 	entries := logs.All()
 	require.Len(t, entries, 1)
 	require.Equal(t, "request failed", entries[0].Message)
-	require.Equal(t, "boom", entries[0].ContextMap()["error"])
+	require.Equal(t, "read avatar file: boom", entries[0].ContextMap()["error"])
 }
 
 func TestGetAvatarMeta(t *testing.T) {

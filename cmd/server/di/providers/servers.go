@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -23,11 +24,12 @@ func NewHTTPServer(cfg *config.Config, log *zap.Logger, avatar avatars.ServicePr
 	e := echo.New()
 	avatars.NewAvatarRouter(e.Group("/api/v1"), avatar, log)
 	if err := webui.NewRouter(e.Group("/web"), avatar, "web/templates", log); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("web router: %w", err)
 	}
 	return &http.Server{
-		Addr:    cfg.Server.HTTP.Address,
-		Handler: applogger.LoggingMiddleware(log, e),
+		Addr:              cfg.Server.HTTP.Address,
+		Handler:           applogger.LoggingMiddleware(log, e),
+		ReadHeaderTimeout: 5 * time.Second,
 	}, nil
 }
 
@@ -59,7 +61,7 @@ func (s *Servers) Start(ctx context.Context) error {
 		defer cancel()
 		if err := s.http.Shutdown(shutCtx); err != nil {
 			s.log.Error("http shutdown", zap.Error(err))
-			return err
+			return fmt.Errorf("http shutdown: %w", err)
 		}
 
 		s.log.Info("HTTP server stopped")

@@ -131,8 +131,7 @@ func (h *avatarRouter) getAvatarByID(c *echo.Context) error {
 	return c.Blob(http.StatusOK, file.ContentType, file.Body)
 }
 
-func (h *avatarRouter) deleteAvatarByID(ctx *echo.Context) error {
-
+func (*avatarRouter) deleteAvatarByID(*echo.Context) error {
 	return nil
 }
 

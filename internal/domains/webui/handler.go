@@ -3,6 +3,7 @@ package webui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"html/template"
 	"io"
 	"net/http"
@@ -43,7 +44,7 @@ type (
 func NewRouter(group *echo.Group, avatar ServiceProvider, templatesDir string, log *zap.Logger) error {
 	tmpl, err := template.ParseGlob(filepath.Join(templatesDir, "*.html"))
 	if err != nil {
-		return err
+		return fmt.Errorf("parse templates: %w", err)
 	}
 	r := &router{avatar: avatar, tmpl: tmpl, log: log}
 
@@ -135,5 +136,8 @@ func (r *router) gallery(c *echo.Context) error {
 func (r *router) render(c *echo.Context, status int, name string, data any) error {
 	c.Response().Header().Set(echo.HeaderContentType, echo.MIMETextHTMLCharsetUTF8)
 	c.Response().WriteHeader(status)
-	return r.tmpl.ExecuteTemplate(c.Response(), name, data)
+	if err := r.tmpl.ExecuteTemplate(c.Response(), name, data); err != nil {
+		return fmt.Errorf("render template: %w", err)
+	}
+	return nil
 }

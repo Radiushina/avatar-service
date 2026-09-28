@@ -1,8 +1,11 @@
 package logger
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"os"
+	"syscall"
 	"time"
 
 	"go.uber.org/zap"
@@ -12,24 +15,40 @@ import (
 func New(level string) (*zap.Logger, error) {
 	lvl, err := zap.ParseAtomicLevel(level)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse log level: %w", err)
 	}
 	cfg := zap.NewProductionConfig()
 	cfg.Level = lvl
 	cfg.DisableStacktrace = true
 	zl, err := cfg.Build()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build logger: %w", err)
 	}
 	return zl, nil
 }
 
-func Exit(log *zap.Logger, msg string, err error) {
-	if log != nil {
-		log.Error(msg, zap.Error(err))
-		_ = log.Sync()
+// LogError writes err and flushes buffered logs. The caller exits the process.
+func LogError(log *zap.Logger, msg string, err error) {
+	if log == nil {
+		return
 	}
-	os.Exit(1)
+	log.Error(msg, zap.Error(err))
+	Sync(log)
+}
+
+// Sync flushes buffered log entries. fsync on stdout and stderr fails on
+// Linux and macOS; those errors are ignored.
+func Sync(log *zap.Logger) {
+	if log == nil {
+		return
+	}
+	err := log.Sync()
+	if err == nil || errors.Is(err, syscall.EINVAL) || errors.Is(err, syscall.ENOTTY) || errors.Is(err, syscall.ENOTSUP) {
+		return
+	}
+	if _, writeErr := fmt.Fprintf(os.Stderr, "sync logger: %v\n", err); writeErr != nil {
+		return
+	}
 }
 
 type loggingResponseWriter struct {
@@ -54,7 +73,10 @@ func (lw *loggingResponseWriter) Write(b []byte) (int, error) {
 	}
 	n, err := lw.ResponseWriter.Write(b)
 	lw.bytes += n
-	return n, err
+	if err != nil {
+		return n, fmt.Errorf("write response: %w", err)
+	}
+	return n, nil
 }
 
 // LoggingMiddleware logs request details (URI, method, duration)

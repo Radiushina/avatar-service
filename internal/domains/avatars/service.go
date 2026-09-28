@@ -66,7 +66,7 @@ func (s *Service) Upload(ctx context.Context, in UploadInput) (entity.Avatar, er
 	key := fmt.Sprintf("avatars/%s/%s/original", in.UserID, id)
 	avatar, err := s.repo.Upload(ctx, id, in.UserID, in.FileName, mime, key, int64(len(in.Body)), in.Body)
 	if err != nil {
-		return entity.Avatar{}, err
+		return entity.Avatar{}, fmt.Errorf("upload avatar: %w", err)
 	}
 	return withAvatarURL(avatar), nil
 }
@@ -87,7 +87,7 @@ func normalizeMime(contentType string) string {
 func (s *Service) SelectByID(ctx context.Context, req entity.AvatarReq) (entity.S3AvatarFile, error) {
 	obj, err := s.repo.SelectByID(ctx, req.AvatarID)
 	if err != nil {
-		return entity.S3AvatarFile{}, err
+		return entity.S3AvatarFile{}, fmt.Errorf("load avatar: %w", err)
 	}
 
 	key, err := objectKey(obj, req.Size)
@@ -100,7 +100,7 @@ func (s *Service) SelectByID(ctx context.Context, req entity.AvatarReq) (entity.
 
 	body, err := s.repo.GetObject(ctx, key)
 	if err != nil {
-		return entity.S3AvatarFile{}, err
+		return entity.S3AvatarFile{}, fmt.Errorf("read avatar file: %w", err)
 	}
 
 	sum := sha256.Sum256(body)
@@ -139,15 +139,14 @@ func mimeForFormat(format string) string {
 	}
 }
 
-func (s *Service) DeleteByID() error {
-
+func (*Service) DeleteByID() error {
 	return nil
 }
 
 func (s *Service) SelectAvatarMeta(ctx context.Context, id string) (entity.AvatarMetadata, error) {
 	meta, err := s.repo.SelectAvatarMeta(ctx, id)
 	if err != nil {
-		return entity.AvatarMetadata{}, err
+		return entity.AvatarMetadata{}, fmt.Errorf("load avatar metadata: %w", err)
 	}
 	for i := range meta.Thumbnails {
 		meta.Thumbnails[i].URL = avatarURLPrefix + meta.ID + "?size=" + string(meta.Thumbnails[i].Size)
@@ -158,7 +157,7 @@ func (s *Service) SelectAvatarMeta(ctx context.Context, id string) (entity.Avata
 func (s *Service) SelectCurrent(ctx context.Context, userID string) (entity.Avatar, error) {
 	avatar, err := s.repo.SelectCurrent(ctx, userID)
 	if err != nil {
-		return entity.Avatar{}, err
+		return entity.Avatar{}, fmt.Errorf("load current avatar: %w", err)
 	}
 	return withAvatarURL(avatar), nil
 }
@@ -167,13 +166,16 @@ func (s *Service) DeleteCurrent(ctx context.Context, actorID, userID string) err
 	if actorID == "" || actorID != userID {
 		return ErrForbidden
 	}
-	return s.repo.DeleteCurrent(ctx, userID)
+	if err := s.repo.DeleteCurrent(ctx, userID); err != nil {
+		return fmt.Errorf("delete: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) SelectUserAvatars(ctx context.Context, userID string) ([]entity.Avatar, error) {
 	list, err := s.repo.SelectUserAvatars(ctx, userID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list user avatars: %w", err)
 	}
 	if list == nil {
 		list = []entity.Avatar{}

@@ -8,7 +8,7 @@ import (
 
 	"github.com/Radiushina/avatar-service/internal/entity"
 	"github.com/doug-martin/goqu/v9"
-	_ "github.com/doug-martin/goqu/v9/dialect/postgres"
+	_ "github.com/doug-martin/goqu/v9/dialect/postgres" // registers the postgres dialect
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -100,7 +100,11 @@ func (r *Repo) GetObject(ctx context.Context, key string) ([]byte, error) {
 	if r.objects == nil {
 		return nil, errors.New("object storage is not configured")
 	}
-	return r.objects.Get(ctx, key)
+	data, err := r.objects.Get(ctx, key)
+	if err != nil {
+		return nil, fmt.Errorf("get object: %w", err)
+	}
+	return data, nil
 }
 
 func (r *Repo) AvatarByID(id string) *goqu.SelectDataset {
@@ -113,7 +117,7 @@ func (r *Repo) AvatarByID(id string) *goqu.SelectDataset {
 		)
 }
 
-func (r *Repo) DeleteByID() error {
+func (*Repo) DeleteByID() error {
 	return nil
 }
 

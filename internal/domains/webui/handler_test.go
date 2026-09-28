@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/Radiushina/avatar-service/internal/domains/avatars"
@@ -58,5 +57,5 @@ func TestGallery(t *testing.T) {
 	body := rec.Body.String()
 	require.Contains(t, body, "user-123")
 	require.Contains(t, body, "/api/v1/avatars/1ca79251-f6e3-45a4-992f-404f6e4e13ed")
-	require.True(t, strings.Contains(body, "ready"))
+	require.Contains(t, body, "ready")
 }

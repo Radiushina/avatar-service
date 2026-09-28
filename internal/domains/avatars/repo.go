@@ -39,7 +39,7 @@ func (r *Repo) Upload(ctx context.Context, id, userID, fileName, mimeType, s3Key
 		return entity.Avatar{}, errors.New("object storage is not configured")
 	}
 	if err := r.objects.Put(ctx, s3Key, mimeType, body); err != nil {
-		return entity.Avatar{}, err
+		return entity.Avatar{}, fmt.Errorf("upload: %w", err)
 	}
 
 	sql, args, err := r.builder.Insert(avatarsTable).
@@ -67,8 +67,8 @@ func (r *Repo) Upload(ctx context.Context, id, userID, fileName, mimeType, s3Key
 	return avatar, nil
 }
 
-func (r *Repo) SelectById(ctx context.Context, id string) (entity.AvatarObject, error) {
-	query, args, err := r.avatarByID(id).ToSQL()
+func (r *Repo) SelectByID(ctx context.Context, id string) (entity.AvatarObject, error) {
+	query, args, err := r.AvatarByID(id).ToSQL()
 	if err != nil {
 		return entity.AvatarObject{}, fmt.Errorf("select avatar: %w", err)
 	}
@@ -103,7 +103,7 @@ func (r *Repo) GetObject(ctx context.Context, key string) ([]byte, error) {
 	return r.objects.Get(ctx, key)
 }
 
-func (r *Repo) avatarByID(id string) *goqu.SelectDataset {
+func (r *Repo) AvatarByID(id string) *goqu.SelectDataset {
 	return r.builder.From(avatarsTable).
 		Prepared(true).
 		Select("mime_type", "s3_key", "thumbnail_s3_keys").
@@ -113,8 +113,7 @@ func (r *Repo) avatarByID(id string) *goqu.SelectDataset {
 		)
 }
 
-func (r *Repo) DeleteById() error {
-
+func (r *Repo) DeleteByID() error {
 	return nil
 }
 
@@ -167,11 +166,11 @@ func (r *Repo) SelectAvatarMeta(ctx context.Context, id string) (entity.AvatarMe
 			return entity.AvatarMetadata{}, fmt.Errorf("decode thumbnail keys: %w", err)
 		}
 	}
-	meta.Thumbnails = thumbnailsFromKeys(keys)
+	meta.Thumbnails = ThumbnailsFromKeys(keys)
 	return meta, nil
 }
 
-func thumbnailsFromKeys(keys map[string]string) []entity.Thumbnail {
+func ThumbnailsFromKeys(keys map[string]string) []entity.Thumbnail {
 	order := []entity.ThumbnailSize{entity.ThumbnailSmol, entity.ThumbnailMedium}
 	out := make([]entity.Thumbnail, 0, len(order))
 	for _, size := range order {
@@ -186,7 +185,7 @@ func thumbnailsFromKeys(keys map[string]string) []entity.Thumbnail {
 func (r *Repo) SelectCurrent(ctx context.Context, userID string) (entity.Avatar, error) {
 	sql, args, err := r.avatarsByUser(userID).Limit(1).ToSQL()
 	if err != nil {
-		return entity.Avatar{}, err
+		return entity.Avatar{}, fmt.Errorf("select current avatar: %w", err)
 	}
 
 	var avatar entity.Avatar
@@ -195,7 +194,7 @@ func (r *Repo) SelectCurrent(ctx context.Context, userID string) (entity.Avatar,
 		return entity.Avatar{}, ErrNotFound
 	}
 	if err != nil {
-		return entity.Avatar{}, err
+		return entity.Avatar{}, fmt.Errorf("select current avatar: %w", err)
 	}
 	return avatar, nil
 }
@@ -203,7 +202,7 @@ func (r *Repo) SelectCurrent(ctx context.Context, userID string) (entity.Avatar,
 func (r *Repo) DeleteCurrent(ctx context.Context, userID string) error {
 	current, err := r.SelectCurrent(ctx, userID)
 	if err != nil {
-		return err
+		return fmt.Errorf("delete current avatar: %w", err)
 	}
 
 	sql, args, err := r.builder.Update(avatarsTable).
@@ -218,12 +217,12 @@ func (r *Repo) DeleteCurrent(ctx context.Context, userID string) error {
 		).
 		ToSQL()
 	if err != nil {
-		return err
+		return fmt.Errorf("delete current avatar: %w", err)
 	}
 
 	tag, err := r.db.Exec(ctx, sql, args...)
 	if err != nil {
-		return err
+		return fmt.Errorf("delete current avatar: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
@@ -234,12 +233,12 @@ func (r *Repo) DeleteCurrent(ctx context.Context, userID string) error {
 func (r *Repo) SelectUserAvatars(ctx context.Context, userID string) ([]entity.Avatar, error) {
 	sql, args, err := r.avatarsByUser(userID).ToSQL()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("select user avatars: %w", err)
 	}
 
 	rows, err := r.db.Query(ctx, sql, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("select user avatars: %w", err)
 	}
 	defer rows.Close()
 
@@ -247,12 +246,12 @@ func (r *Repo) SelectUserAvatars(ctx context.Context, userID string) ([]entity.A
 	for rows.Next() {
 		var avatar entity.Avatar
 		if err := rows.Scan(&avatar.ID, &avatar.UserID, &avatar.Status, &avatar.CreatedAt); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("select user avatars: %w", err)
 		}
 		list = append(list, avatar)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("select user avatars: %w", err)
 	}
 	return list, nil
 }

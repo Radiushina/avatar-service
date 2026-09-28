@@ -28,9 +28,9 @@ type (
 
 	RepoProvider interface {
 		Upload(ctx context.Context, id, userID, fileName, mimeType, s3Key string, size int64, body []byte) (entity.Avatar, error)
-		SelectById(ctx context.Context, id string) (entity.AvatarObject, error)
+		SelectByID(ctx context.Context, id string) (entity.AvatarObject, error)
 		GetObject(ctx context.Context, key string) ([]byte, error)
-		DeleteById() error
+		DeleteByID() error
 		SelectAvatarMeta(ctx context.Context, id string) (entity.AvatarMetadata, error)
 		SelectCurrent(ctx context.Context, userID string) (entity.Avatar, error)
 		DeleteCurrent(ctx context.Context, userID string) error
@@ -84,8 +84,8 @@ func normalizeMime(contentType string) string {
 	}
 }
 
-func (s *Service) SelectById(ctx context.Context, req entity.AvatarReq) (entity.S3AvatarFile, error) {
-	obj, err := s.repo.SelectById(ctx, req.AvatarID)
+func (s *Service) SelectByID(ctx context.Context, req entity.AvatarReq) (entity.S3AvatarFile, error) {
+	obj, err := s.repo.SelectByID(ctx, req.AvatarID)
 	if err != nil {
 		return entity.S3AvatarFile{}, err
 	}
@@ -139,7 +139,7 @@ func mimeForFormat(format string) string {
 	}
 }
 
-func (s *Service) DeleteById() error {
+func (s *Service) DeleteByID() error {
 
 	return nil
 }

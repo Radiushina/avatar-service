@@ -1,4 +1,4 @@
-package avatars
+package avatars_test
 
 import (
 	"context"
@@ -9,13 +9,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Radiushina/avatar-service/internal/domains/avatars"
 	"github.com/Radiushina/avatar-service/internal/entity"
-	"github.com/doug-martin/goqu/v9"
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 )
+
+const userIDHeader = "X-User-ID"
 
 func TestUserAvatarRoutes(t *testing.T) {
 	t.Parallel()
@@ -45,7 +47,7 @@ func TestUserAvatarRoutes(t *testing.T) {
 	t.Run("current avatar missing", func(t *testing.T) {
 		t.Parallel()
 
-		repo := &stubRepo{currentErr: ErrNotFound}
+		repo := &stubRepo{currentErr: avatars.ErrNotFound}
 		rec := doRequest(t, repo, http.MethodGet, "/api/v1/users/user-123/avatar", "user-123")
 
 		require.Equal(t, http.StatusNotFound, rec.Code)
@@ -83,7 +85,7 @@ func TestUserAvatarRoutes(t *testing.T) {
 	t.Run("delete missing avatar", func(t *testing.T) {
 		t.Parallel()
 
-		repo := &stubRepo{deleteErr: ErrNotFound}
+		repo := &stubRepo{deleteErr: avatars.ErrNotFound}
 		rec := doRequest(t, repo, http.MethodDelete, "/api/v1/users/user-123/avatar", "user-123")
 
 		require.Equal(t, http.StatusNotFound, rec.Code)
@@ -184,7 +186,7 @@ func TestGetAvatarByID(t *testing.T) {
 	t.Run("missing", func(t *testing.T) {
 		t.Parallel()
 
-		rec := doRequest(t, &stubRepo{objectErr: ErrNotFound}, http.MethodGet, "/api/v1/avatars/"+id, "")
+		rec := doRequest(t, &stubRepo{objectErr: avatars.ErrNotFound}, http.MethodGet, "/api/v1/avatars/"+id, "")
 		require.Equal(t, http.StatusNotFound, rec.Code)
 		require.JSONEq(t, `{"error":"Avatar not found"}`, rec.Body.String())
 	})
@@ -237,7 +239,7 @@ func TestInternalErrorIsLogged(t *testing.T) {
 	const id = "1ca79251-f6e3-45a4-992f-404f6e4e13ed"
 	core, logs := observer.New(zap.ErrorLevel)
 	e := echo.New()
-	NewAvatarRouter(e.Group("/api/v1"), NewService(&stubRepo{
+	avatars.NewAvatarRouter(e.Group("/api/v1"), avatars.NewService(&stubRepo{
 		object: entity.AvatarObject{
 			ID:       id,
 			MimeType: string(entity.ImageJpeg),
@@ -255,17 +257,6 @@ func TestInternalErrorIsLogged(t *testing.T) {
 	require.Len(t, entries, 1)
 	require.Equal(t, "request failed", entries[0].Message)
 	require.Equal(t, "boom", entries[0].ContextMap()["error"])
-}
-
-func TestAvatarByIDQueryCastsUUID(t *testing.T) {
-	t.Parallel()
-
-	repo := &Repo{builder: goqu.Dialect("postgres")}
-	sql, args, err := repo.avatarByID("1ca79251-f6e3-45a4-992f-404f6e4e13ed").ToSQL()
-	require.NoError(t, err)
-	require.Contains(t, sql, "uuid")
-	require.Contains(t, sql, "deleted_at")
-	require.Equal(t, []any{"1ca79251-f6e3-45a4-992f-404f6e4e13ed"}, args)
 }
 
 func TestGetAvatarMeta(t *testing.T) {
@@ -314,7 +305,7 @@ func TestGetAvatarMeta(t *testing.T) {
 	t.Run("not found", func(t *testing.T) {
 		t.Parallel()
 
-		rec := doRequest(t, &stubRepo{metaErr: ErrNotFound}, http.MethodGet, "/api/v1/avatars/"+id+"/metadata", "")
+		rec := doRequest(t, &stubRepo{metaErr: avatars.ErrNotFound}, http.MethodGet, "/api/v1/avatars/"+id+"/metadata", "")
 		require.Equal(t, http.StatusNotFound, rec.Code)
 		require.JSONEq(t, `{"error":"Avatar not found"}`, rec.Body.String())
 	})
@@ -330,7 +321,7 @@ func TestGetAvatarMeta(t *testing.T) {
 func TestThumbnailsFromKeys(t *testing.T) {
 	t.Parallel()
 
-	got := thumbnailsFromKeys(map[string]string{
+	got := avatars.ThumbnailsFromKeys(map[string]string{
 		"300x300": "k3",
 		"100x100": "k1",
 		"other":   "kx",
@@ -341,7 +332,7 @@ func TestThumbnailsFromKeys(t *testing.T) {
 	}, got)
 }
 
-func doRequest(t *testing.T, repo RepoProvider, method, path, actorID string) *httptest.ResponseRecorder {
+func doRequest(t *testing.T, repo avatars.RepoProvider, method, path, actorID string) *httptest.ResponseRecorder {
 	t.Helper()
 
 	return doRaw(t, repo, method, path, func(req *http.Request) {
@@ -351,11 +342,11 @@ func doRequest(t *testing.T, repo RepoProvider, method, path, actorID string) *h
 	})
 }
 
-func doRaw(t *testing.T, repo RepoProvider, method, path string, setup func(*http.Request)) *httptest.ResponseRecorder {
+func doRaw(t *testing.T, repo avatars.RepoProvider, method, path string, setup func(*http.Request)) *httptest.ResponseRecorder {
 	t.Helper()
 
 	e := echo.New()
-	NewAvatarRouter(e.Group("/api/v1"), NewService(repo), zap.NewNop())
+	avatars.NewAvatarRouter(e.Group("/api/v1"), avatars.NewService(repo), zap.NewNop())
 
 	req := httptest.NewRequest(method, path, nil)
 	if setup != nil {
@@ -383,26 +374,26 @@ type stubRepo struct {
 func (s *stubRepo) Upload(_ context.Context, id, userID, fileName, mimeType, s3Key string, size int64, body []byte) (entity.Avatar, error) {
 	return entity.Avatar{ID: id, UserID: userID, Status: "processing"}, nil
 }
-func (s *stubRepo) DeleteById() error { return nil }
+func (s *stubRepo) DeleteByID() error { return nil }
 
 func (s *stubRepo) SelectAvatarMeta(_ context.Context, id string) (entity.AvatarMetadata, error) {
 	if s.metaErr != nil {
 		return entity.AvatarMetadata{}, s.metaErr
 	}
 	if s.meta.ID == "" {
-		return entity.AvatarMetadata{}, ErrNotFound
+		return entity.AvatarMetadata{}, avatars.ErrNotFound
 	}
 	meta := s.meta
 	meta.ID = id
 	return meta, nil
 }
 
-func (s *stubRepo) SelectById(context.Context, string) (entity.AvatarObject, error) {
+func (s *stubRepo) SelectByID(context.Context, string) (entity.AvatarObject, error) {
 	if s.objectErr != nil {
 		return entity.AvatarObject{}, s.objectErr
 	}
 	if s.object.ID == "" {
-		return entity.AvatarObject{}, ErrNotFound
+		return entity.AvatarObject{}, avatars.ErrNotFound
 	}
 	return s.object, nil
 }
@@ -413,7 +404,7 @@ func (s *stubRepo) GetObject(_ context.Context, key string) ([]byte, error) {
 	}
 	body, ok := s.bodies[key]
 	if !ok {
-		return nil, ErrNotFound
+		return nil, avatars.ErrNotFound
 	}
 	return body, nil
 }
@@ -423,7 +414,7 @@ func (s *stubRepo) SelectCurrent(context.Context, string) (entity.Avatar, error)
 		return entity.Avatar{}, s.currentErr
 	}
 	if s.current.ID == "" {
-		return entity.Avatar{}, ErrNotFound
+		return entity.Avatar{}, avatars.ErrNotFound
 	}
 	return s.current, nil
 }

@@ -22,8 +22,8 @@ type (
 
 	ServiceProvider interface {
 		Upload(ctx context.Context, in UploadInput) (entity.Avatar, error)
-		SelectById(ctx context.Context, req entity.AvatarReq) (entity.S3AvatarFile, error)
-		DeleteById() error
+		SelectByID(ctx context.Context, req entity.AvatarReq) (entity.S3AvatarFile, error)
+		DeleteByID() error
 		SelectAvatarMeta(ctx context.Context, id string) (entity.AvatarMetadata, error)
 		SelectCurrent(ctx context.Context, userID string) (entity.Avatar, error)
 		DeleteCurrent(ctx context.Context, actorID, userID string) error
@@ -39,8 +39,8 @@ func NewAvatarRouter(group *echo.Group, avatar ServiceProvider, log *zap.Logger)
 	avatars := group.Group("/avatars")
 	{
 		avatars.POST("", r.uploadFile)
-		avatars.GET("/:avatar_id", r.getAvatarById)
-		avatars.DELETE("/:avatar_id", r.deleteAvatarById)
+		avatars.GET("/:avatar_id", r.getAvatarByID)
+		avatars.DELETE("/:avatar_id", r.deleteAvatarByID)
 		avatars.GET("/:avatar_id/metadata", r.getAvatarMeta)
 	}
 
@@ -100,7 +100,7 @@ func (h *avatarRouter) uploadFile(c *echo.Context) error {
 	return c.JSON(http.StatusCreated, avatar)
 }
 
-func (h *avatarRouter) getAvatarById(c *echo.Context) error {
+func (h *avatarRouter) getAvatarByID(c *echo.Context) error {
 	avatarID, err := pathAvatarID(c)
 	if err != nil || avatarID == "" {
 		return err
@@ -115,7 +115,7 @@ func (h *avatarRouter) getAvatarById(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, apiError{Error: err.Error()})
 	}
 
-	file, err := h.avatar.SelectById(c.Request().Context(), req)
+	file, err := h.avatar.SelectByID(c.Request().Context(), req)
 	if err != nil {
 		return h.writeServiceErr(c, err)
 	}
@@ -131,7 +131,7 @@ func (h *avatarRouter) getAvatarById(c *echo.Context) error {
 	return c.Blob(http.StatusOK, file.ContentType, file.Body)
 }
 
-func (h *avatarRouter) deleteAvatarById(ctx *echo.Context) error {
+func (h *avatarRouter) deleteAvatarByID(ctx *echo.Context) error {
 
 	return nil
 }

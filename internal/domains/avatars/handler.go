@@ -23,7 +23,7 @@ type (
 	ServiceProvider interface {
 		Upload(ctx context.Context, in UploadInput) (entity.Avatar, error)
 		SelectByID(ctx context.Context, req entity.AvatarReq) (entity.S3AvatarFile, error)
-		DeleteByID() error
+		DeleteByID(ctx context.Context, actorID, avatarID string) error
 		SelectAvatarMeta(ctx context.Context, id string) (entity.AvatarMetadata, error)
 		SelectCurrent(ctx context.Context, userID string) (entity.Avatar, error)
 		DeleteCurrent(ctx context.Context, actorID, userID string) error
@@ -131,8 +131,19 @@ func (h *avatarRouter) getAvatarByID(c *echo.Context) error {
 	return c.Blob(http.StatusOK, file.ContentType, file.Body)
 }
 
-func (*avatarRouter) deleteAvatarByID(*echo.Context) error {
-	return nil
+func (h *avatarRouter) deleteAvatarByID(c *echo.Context) error {
+	avatarID, err := pathAvatarID(c)
+	if err != nil || avatarID == "" {
+		return err
+	}
+	actorID := c.Request().Header.Get(userIDHeader)
+	if actorID == "" {
+		return c.JSON(http.StatusBadRequest, apiError{Error: "X-User-ID is required"})
+	}
+	if err := h.avatar.DeleteByID(c.Request().Context(), actorID, avatarID); err != nil {
+		return h.writeServiceErr(c, err)
+	}
+	return c.NoContent(http.StatusNoContent)
 }
 
 func (h *avatarRouter) getAvatarMeta(c *echo.Context) error {

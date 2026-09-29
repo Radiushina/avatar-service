@@ -32,10 +32,24 @@ func InjectApp(ctx context.Context) (*App, func(), error) {
 		return nil, nil, err
 	}
 	s3Store := providers.NewS3Store(config)
+	client, cleanup3, err := providers.NewRabbit(config, logger)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	publisher, err := providers.NewPublisher(ctx, client)
+	if err != nil {
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	repo := avatars.NewAvatarRepo(pool, s3Store)
-	service := avatars.NewService(repo)
+	service := avatars.NewService(repo, publisher)
 	server, err := providers.NewHTTPServer(config, logger, service)
 	if err != nil {
+		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
@@ -47,6 +61,7 @@ func InjectApp(ctx context.Context) (*App, func(), error) {
 		Log:    logger,
 	}
 	return app, func() {
+		cleanup3()
 		cleanup2()
 		cleanup()
 	}, nil

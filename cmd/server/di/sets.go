@@ -2,6 +2,7 @@ package di
 
 import (
 	"github.com/Radiushina/avatar-service/cmd/server/di/providers"
+	"github.com/Radiushina/avatar-service/internal/broker"
 	"github.com/Radiushina/avatar-service/internal/domains/avatars"
 	"github.com/google/wire"
 )
@@ -15,6 +16,9 @@ var (
 	InfraSet = wire.NewSet(
 		providers.NewPostgres,
 		providers.NewS3Store,
+		providers.NewRabbit,
+		providers.NewPublisher,
+		wire.Bind(new(avatars.Publisher), new(*broker.Publisher)),
 		wire.Bind(new(avatars.ObjectStore), new(*providers.S3Store)),
 		avatars.NewAvatarRepo,
 		wire.Bind(new(avatars.RepoProvider), new(*avatars.Repo)),

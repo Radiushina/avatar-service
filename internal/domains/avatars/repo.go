@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/Radiushina/avatar-service/internal/entity"
 	"github.com/doug-martin/goqu/v9"
@@ -88,10 +89,9 @@ func (r *Repo) SelectByID(ctx context.Context, id string) (entity.AvatarObject, 
 	obj.ID = id
 	// ponytail: thumbnail_s3_keys is {"100x100":"s3-key","300x300":"s3-key"}.
 	// An array of objects needs a new decoder.
-	if len(thumbs) > 0 {
-		if err := json.Unmarshal(thumbs, &obj.Thumbnails); err != nil {
-			return entity.AvatarObject{}, fmt.Errorf("decode thumbnail keys: %w", err)
-		}
+	obj.Thumbnails, err = decodeThumbKeys(thumbs)
+	if err != nil {
+		return entity.AvatarObject{}, err
 	}
 	return obj, nil
 }
@@ -117,8 +117,56 @@ func (r *Repo) AvatarByID(id string) *goqu.SelectDataset {
 		)
 }
 
-func (*Repo) DeleteByID() error {
+func (r *Repo) GetAvatar(ctx context.Context, id string) (StoredAvatar, error) {
+	query, args, err := r.storedByID(id).ToSQL()
+	if err != nil {
+		return StoredAvatar{}, fmt.Errorf("select avatar: %w", err)
+	}
+	return r.scanStored(ctx, query, args)
+}
+
+func (r *Repo) UpdateProcessingStatus(ctx context.Context, id, status string, thumbs map[string]string) error {
+	raw, err := json.Marshal(thumbs)
+	if err != nil {
+		return fmt.Errorf("encode thumbnail keys: %w", err)
+	}
+	sql, args, err := r.builder.Update(avatarsTable).
+		Prepared(true).
+		Set(goqu.Record{
+			"processing_status": status,
+			"thumbnail_s3_keys": goqu.Cast(goqu.V(string(raw)), "jsonb"),
+			"updated_at":        goqu.L("now()"),
+		}).
+		Where(
+			goqu.C("id").Eq(goqu.Cast(goqu.V(id), "uuid")),
+			goqu.C("deleted_at").IsNull(),
+		).
+		ToSQL()
+	if err != nil {
+		return fmt.Errorf("update processing status: %w", err)
+	}
+	tag, err := r.db.Exec(ctx, sql, args...)
+	if err != nil {
+		return fmt.Errorf("update processing status: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
 	return nil
+}
+
+func (r *Repo) DeleteByID(ctx context.Context, avatarID, userID string) (Removal, error) {
+	avatar, err := r.GetAvatar(ctx, avatarID)
+	if err != nil {
+		return Removal{}, fmt.Errorf("delete avatar: %w", err)
+	}
+	if avatar.Deleted {
+		return Removal{}, ErrNotFound
+	}
+	if avatar.UserID != userID {
+		return Removal{}, ErrForbidden
+	}
+	return r.remove(ctx, avatar)
 }
 
 func (r *Repo) SelectAvatarMeta(ctx context.Context, id string) (entity.AvatarMetadata, error) {
@@ -164,11 +212,9 @@ func (r *Repo) SelectAvatarMeta(ctx context.Context, id string) (entity.AvatarMe
 		return entity.AvatarMetadata{}, fmt.Errorf("select avatar meta: %w", err)
 	}
 
-	keys := map[string]string{}
-	if len(thumbs) > 0 {
-		if err := json.Unmarshal(thumbs, &keys); err != nil {
-			return entity.AvatarMetadata{}, fmt.Errorf("decode thumbnail keys: %w", err)
-		}
+	keys, err := decodeThumbKeys(thumbs)
+	if err != nil {
+		return entity.AvatarMetadata{}, err
 	}
 	meta.Thumbnails = ThumbnailsFromKeys(keys)
 	return meta, nil
@@ -203,12 +249,37 @@ func (r *Repo) SelectCurrent(ctx context.Context, userID string) (entity.Avatar,
 	return avatar, nil
 }
 
-func (r *Repo) DeleteCurrent(ctx context.Context, userID string) error {
-	current, err := r.SelectCurrent(ctx, userID)
+func (r *Repo) DeleteCurrent(ctx context.Context, userID string) (Removal, error) {
+	query, args, err := r.storedColumns().
+		Where(
+			goqu.C("user_id").Eq(userID),
+			goqu.C("deleted_at").IsNull(),
+		).
+		Order(goqu.C("created_at").Desc()).
+		Limit(1).
+		ToSQL()
 	if err != nil {
-		return fmt.Errorf("delete current avatar: %w", err)
+		return Removal{}, fmt.Errorf("delete current avatar: %w", err)
 	}
+	avatar, err := r.scanStored(ctx, query, args)
+	if err != nil {
+		return Removal{}, fmt.Errorf("delete current avatar: %w", err)
+	}
+	removed, err := r.remove(ctx, avatar)
+	if err != nil {
+		return Removal{}, fmt.Errorf("delete current avatar: %w", err)
+	}
+	return removed, nil
+}
 
+func (r *Repo) remove(ctx context.Context, avatar StoredAvatar) (Removal, error) {
+	if err := r.softDelete(ctx, avatar.ID); err != nil {
+		return Removal{}, err
+	}
+	return Removal{ID: avatar.ID, S3Keys: avatar.ObjectKeys()}, nil
+}
+
+func (r *Repo) softDelete(ctx context.Context, id string) error {
 	sql, args, err := r.builder.Update(avatarsTable).
 		Prepared(true).
 		Set(goqu.Record{
@@ -216,22 +287,87 @@ func (r *Repo) DeleteCurrent(ctx context.Context, userID string) error {
 			"updated_at": goqu.L("now()"),
 		}).
 		Where(
-			goqu.C("id").Eq(current.ID),
+			goqu.C("id").Eq(goqu.Cast(goqu.V(id), "uuid")),
 			goqu.C("deleted_at").IsNull(),
 		).
 		ToSQL()
 	if err != nil {
-		return fmt.Errorf("delete current avatar: %w", err)
+		return fmt.Errorf("delete avatar: %w", err)
 	}
-
 	tag, err := r.db.Exec(ctx, sql, args...)
 	if err != nil {
-		return fmt.Errorf("delete current avatar: %w", err)
+		return fmt.Errorf("delete avatar: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (a StoredAvatar) ObjectKeys() []string {
+	keys := make([]string, 0, 1+len(a.Thumbnails))
+	if a.S3Key != "" {
+		keys = append(keys, a.S3Key)
+	}
+	for _, size := range []entity.ThumbnailSize{entity.ThumbnailSmol, entity.ThumbnailMedium} {
+		if key := a.Thumbnails[string(size)]; key != "" {
+			keys = append(keys, key)
+		}
+	}
+	return keys
+}
+
+func (r *Repo) storedByID(id string) *goqu.SelectDataset {
+	return r.storedColumns().Where(goqu.C("id").Eq(goqu.Cast(goqu.V(id), "uuid")))
+}
+
+func (r *Repo) storedColumns() *goqu.SelectDataset {
+	return r.builder.From(avatarsTable).
+		Prepared(true).
+		Select("id", "user_id", "s3_key", "thumbnail_s3_keys", "processing_status", "deleted_at")
+}
+
+func (r *Repo) scanStored(ctx context.Context, query string, args []any) (StoredAvatar, error) {
+	var (
+		avatar    StoredAvatar
+		thumbs    []byte
+		status    *string
+		deletedAt *time.Time
+	)
+	err := r.db.QueryRow(ctx, query, args...).Scan(
+		&avatar.ID,
+		&avatar.UserID,
+		&avatar.S3Key,
+		&thumbs,
+		&status,
+		&deletedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return StoredAvatar{}, ErrNotFound
+	}
+	if err != nil {
+		return StoredAvatar{}, fmt.Errorf("select avatar: %w", err)
+	}
+	if status != nil {
+		avatar.ProcessingStatus = *status
+	}
+	avatar.Deleted = deletedAt != nil
+	avatar.Thumbnails, err = decodeThumbKeys(thumbs)
+	if err != nil {
+		return StoredAvatar{}, err
+	}
+	return avatar, nil
+}
+
+func decodeThumbKeys(raw []byte) (map[string]string, error) {
+	if len(raw) == 0 {
+		return map[string]string{}, nil
+	}
+	keys := map[string]string{}
+	if err := json.Unmarshal(raw, &keys); err != nil {
+		return nil, fmt.Errorf("decode thumbnail keys: %w", err)
+	}
+	return keys, nil
 }
 
 func (r *Repo) SelectUserAvatars(ctx context.Context, userID string) ([]entity.Avatar, error) {

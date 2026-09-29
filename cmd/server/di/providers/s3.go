@@ -80,6 +80,17 @@ func (s *S3Store) Get(ctx context.Context, key string) (body []byte, err error) 
 	return body, nil
 }
 
+func (s *S3Store) Delete(ctx context.Context, key string) error {
+	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return fmt.Errorf("delete avatar object: %w", err)
+	}
+	return nil
+}
+
 func isMissingObject(err error) bool {
 	var apiErr smithy.APIError
 	if errors.As(err, &apiErr) {

@@ -246,7 +246,7 @@ func TestInternalErrorIsLogged(t *testing.T) {
 			S3Key:    "k",
 		},
 		getErr: errors.New("boom"),
-	}), zap.New(core))
+	}, nopPublisher{}), zap.New(core))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/avatars/"+id, nil)
 	rec := httptest.NewRecorder()
@@ -346,7 +346,7 @@ func doRaw(t *testing.T, repo avatars.RepoProvider, method, path string, setup f
 	t.Helper()
 
 	e := echo.New()
-	avatars.NewAvatarRouter(e.Group("/api/v1"), avatars.NewService(repo), zap.NewNop())
+	avatars.NewAvatarRouter(e.Group("/api/v1"), avatars.NewService(repo, nopPublisher{}), zap.NewNop())
 
 	req := httptest.NewRequest(method, path, nil)
 	if setup != nil {
@@ -371,10 +371,21 @@ type stubRepo struct {
 	metaErr    error
 }
 
+type nopPublisher struct{}
+
+func (nopPublisher) Publish(context.Context, string, string, any) error { return nil }
+
 func (s *stubRepo) Upload(_ context.Context, id, userID, fileName, mimeType, s3Key string, size int64, body []byte) (entity.Avatar, error) {
 	return entity.Avatar{ID: id, UserID: userID, Status: "processing"}, nil
 }
-func (s *stubRepo) DeleteByID() error { return nil }
+
+func (s *stubRepo) DeleteByID(context.Context, string, string) (avatars.Removal, error) {
+	if s.deleteErr != nil {
+		return avatars.Removal{}, s.deleteErr
+	}
+	s.deleted = true
+	return avatars.Removal{ID: "deleted"}, nil
+}
 
 func (s *stubRepo) SelectAvatarMeta(_ context.Context, id string) (entity.AvatarMetadata, error) {
 	if s.metaErr != nil {
@@ -419,12 +430,12 @@ func (s *stubRepo) SelectCurrent(context.Context, string) (entity.Avatar, error)
 	return s.current, nil
 }
 
-func (s *stubRepo) DeleteCurrent(context.Context, string) error {
+func (s *stubRepo) DeleteCurrent(context.Context, string) (avatars.Removal, error) {
 	if s.deleteErr != nil {
-		return s.deleteErr
+		return avatars.Removal{}, s.deleteErr
 	}
 	s.deleted = true
-	return nil
+	return avatars.Removal{ID: "deleted"}, nil
 }
 
 func (s *stubRepo) SelectUserAvatars(context.Context, string) ([]entity.Avatar, error) {

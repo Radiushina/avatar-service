@@ -18,12 +18,14 @@ require (
 	github.com/knadh/koanf/v2 v2.3.7
 	github.com/labstack/echo/v5 v5.3.1
 	github.com/moby/moby/api v1.55.0
+	github.com/rabbitmq/amqp091-go v1.10.0
 	github.com/samber/lo v1.53.0
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.44.0
 	go.uber.org/zap v1.28.0
+	golang.org/x/image v0.25.0
 )
 
 require (

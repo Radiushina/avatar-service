@@ -80,6 +80,14 @@ func (s *S3Store) Get(ctx context.Context, key string) (body []byte, err error) 
 	return body, nil
 }
 
+func (s *S3Store) Ping(ctx context.Context) error {
+	_, err := s.client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: aws.String(s.bucket)})
+	if err != nil {
+		return fmt.Errorf("s3 ping: %w", err)
+	}
+	return nil
+}
+
 func (s *S3Store) Delete(ctx context.Context, key string) error {
 	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(s.bucket),

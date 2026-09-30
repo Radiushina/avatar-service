@@ -32,6 +32,23 @@ func Dial(url string, log *zap.Logger) (*Client, error) {
 	return &Client{conn: conn, log: log}, nil
 }
 
+func (c *Client) Ping(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("rabbitmq ping: %w", err)
+	}
+	if c == nil || c.conn == nil || c.conn.IsClosed() {
+		return errors.New("rabbitmq connection closed")
+	}
+	ch, err := c.conn.Channel()
+	if err != nil {
+		return fmt.Errorf("rabbitmq ping: %w", err)
+	}
+	if err := ch.Close(); err != nil {
+		return fmt.Errorf("rabbitmq ping: %w", err)
+	}
+	return nil
+}
+
 func (c *Client) Close() {
 	if c == nil || c.conn == nil {
 		return

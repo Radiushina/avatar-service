@@ -11,6 +11,11 @@ import (
 	"go.uber.org/zap"
 )
 
+type Postgres struct {
+	client *pgxpool.Pool
+	log    *zap.Logger
+}
+
 func NewPostgres(ctx context.Context, cfg *config.Config, log *zap.Logger) (*pgxpool.Pool, func(), error) {
 	if err := pgmigrator.MigrateFromEmbeddedFS(migrations.Postgres, "postgres", cfg.Database.DSN, log); err != nil {
 		return nil, nil, fmt.Errorf("migrate: %w", err)
@@ -26,4 +31,21 @@ func NewPostgres(ctx context.Context, cfg *config.Config, log *zap.Logger) (*pgx
 	}
 
 	return pool, pool.Close, nil
+}
+
+func NewDBHealth(pool *pgxpool.Pool, log *zap.Logger) *Postgres {
+	return &Postgres{client: pool, log: log}
+}
+
+func (p *Postgres) Ping(ctx context.Context) error {
+	if p == nil || p.client == nil {
+		return fmt.Errorf("database not configured")
+	}
+	if err := p.client.Ping(ctx); err != nil {
+		if p.log != nil {
+			p.log.Error("db ping", zap.Error(err))
+		}
+		return fmt.Errorf("database unavailable: %w", err)
+	}
+	return nil
 }

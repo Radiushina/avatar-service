@@ -9,6 +9,7 @@ import (
 
 	"github.com/Radiushina/avatar-service/internal/config"
 	"github.com/Radiushina/avatar-service/internal/domains/avatars"
+	"github.com/Radiushina/avatar-service/internal/domains/health"
 	applogger "github.com/Radiushina/avatar-service/internal/domains/logger"
 	"github.com/Radiushina/avatar-service/internal/domains/webui"
 	"github.com/labstack/echo/v5"
@@ -20,9 +21,17 @@ type Servers struct {
 	log  *zap.Logger
 }
 
-func NewHTTPServer(cfg *config.Config, log *zap.Logger, avatar avatars.ServiceProvider) (*http.Server, error) {
+func NewHTTPServer(
+	cfg *config.Config,
+	log *zap.Logger,
+	avatar avatars.ServiceProvider,
+	dbCheck health.DBHealthCheckProvider,
+	s3 health.S3HealthCheckProvider,
+	broker health.BrokerHealthCheckProvider,
+) (*http.Server, error) {
 	e := echo.New()
 	avatars.NewAvatarRouter(e.Group("/api/v1"), avatar, log)
+	health.NewHealthCheckRouter(e.Group(""), log, dbCheck, s3, broker)
 	if err := webui.NewRouter(e.Group("/web"), avatar, "web/templates", log); err != nil {
 		return nil, fmt.Errorf("web router: %w", err)
 	}

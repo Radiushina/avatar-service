@@ -50,10 +50,24 @@ services:
     environment:
       MINIO_ROOT_USER: minio
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-    command: server /data --console-address ":9003"
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        minio server /data --console-address ":9003" &
+        pid=$$!
+        trap 'kill -TERM $$pid' TERM INT
+        until mc alias set local http://127.0.0.1:9000 minio "$$MINIO_ROOT_PASSWORD" && mc mb --ignore-existing local/avatars; do
+          sleep 1
+        done
+        wait $$pid
     ports:
       - "9000:9000"
       - "9001:9001"
+    healthcheck:
+      test: ["CMD", "mc", "stat", "local/avatars"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     volumes:
       - minio_data:/data
     restart: unless-stopped
@@ -81,7 +95,7 @@ services:
       postgres:
         condition: service_healthy
       minio:
-        condition: service_started
+        condition: service_healthy
       rabbitmq:
         condition: service_healthy
     restart: unless-stopped
@@ -107,7 +121,7 @@ services:
       postgres:
         condition: service_healthy
       minio:
-        condition: service_started
+        condition: service_healthy
       rabbitmq:
         condition: service_healthy
     restart: unless-stopped

@@ -36,6 +36,14 @@ func LogError(log *zap.Logger, msg string, err error) {
 	Sync(log)
 }
 
+func LogStartupErr(msg string, err error) {
+	log, logErr := New("error")
+	if logErr != nil {
+		return
+	}
+	LogError(log, msg, err)
+}
+
 // Sync flushes buffered log entries. fsync on stdout and stderr fails on
 // Linux and macOS; those errors are ignored.
 func Sync(log *zap.Logger) {

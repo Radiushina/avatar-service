@@ -23,7 +23,7 @@ func run() error {
 
 	app, cleanup, err := di.InjectApp(ctx)
 	if err != nil {
-		logStartupErr("inject app", err)
+		applogger.LogStartupErr("inject app", err)
 		return fmt.Errorf("inject app: %w", err)
 	}
 	defer cleanup()
@@ -33,12 +33,4 @@ func run() error {
 		return fmt.Errorf("run app: %w", err)
 	}
 	return nil
-}
-
-func logStartupErr(msg string, err error) {
-	log, logErr := applogger.New("error")
-	if logErr != nil {
-		return
-	}
-	applogger.LogError(log, msg, err)
 }

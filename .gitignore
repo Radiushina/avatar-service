@@ -5,6 +5,7 @@
 
 # Config
 .env
+config.yml
 
 # Binaries for programs and plugins
 *.exe

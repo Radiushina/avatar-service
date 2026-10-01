@@ -26,12 +26,12 @@ func run() error {
 
 	cfg, err := providers.NewConfig()
 	if err != nil {
-		logStartupErr("load config", err)
+		applogger.LogStartupErr("load config", err)
 		return fmt.Errorf("load config: %w", err)
 	}
 	log, stopLog, err := providers.NewLogger(cfg)
 	if err != nil {
-		logStartupErr("logger", err)
+		applogger.LogStartupErr("logger", err)
 		return fmt.Errorf("logger: %w", err)
 	}
 	defer stopLog()
@@ -57,12 +57,4 @@ func run() error {
 		return fmt.Errorf("run worker: %w", err)
 	}
 	return nil
-}
-
-func logStartupErr(msg string, err error) {
-	log, logErr := applogger.New("error")
-	if logErr != nil {
-		return
-	}
-	applogger.LogError(log, msg, err)
 }

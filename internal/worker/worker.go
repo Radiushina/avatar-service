@@ -14,16 +14,16 @@ import (
 )
 
 const (
-	maxAttempts     = 5
-	statusCompleted = "completed"
-	thumbSmall      = 100
-	thumbMedium     = 300
+	maxAttempts = 5
+
+	thumbSmall  = 100
+	thumbMedium = 300
 )
 
 type (
 	AvatarRepo interface {
 		GetAvatar(ctx context.Context, id string) (avatars.StoredAvatar, error)
-		UpdateProcessingStatus(ctx context.Context, id, status string, thumbs map[string]string) error
+		UpdateProcessingStatus(ctx context.Context, id string, status entity.ProcessingStatus, thumbs map[string]string, etags map[string]string) error
 	}
 
 	ObjectStore interface {
@@ -100,7 +100,7 @@ func (w *Worker) processUpload(ctx context.Context, event broker.AvatarUploadEve
 		}
 		return fmt.Errorf("load avatar: %w", err)
 	}
-	if avatar.Deleted || avatar.ProcessingStatus == statusCompleted {
+	if avatar.Deleted || avatar.ProcessingStatus == entity.Completed {
 		return nil
 	}
 
@@ -129,14 +129,16 @@ func (w *Worker) processUpload(ctx context.Context, event broker.AvatarUploadEve
 	}
 
 	keys := make(map[string]string, len(thumbnails))
+	etags := make(map[string]string, len(thumbnails))
 	for _, thumb := range thumbnails {
 		key := fmt.Sprintf("thumbnails/%s/%s.jpg", event.AvatarID, thumb.size)
 		if err := w.objects.Put(ctx, key, string(entity.ImageJpeg), thumb.data); err != nil {
 			return fmt.Errorf("upload thumbnail: %w", err)
 		}
 		keys[thumb.size] = key
+		etags[thumb.size] = avatars.FileETag(thumb.data)
 	}
-	if err := w.repo.UpdateProcessingStatus(ctx, event.AvatarID, statusCompleted, keys); err != nil {
+	if err := w.repo.UpdateProcessingStatus(ctx, event.AvatarID, entity.Completed, keys, etags); err != nil {
 		return fmt.Errorf("update processing status: %w", err)
 	}
 	w.log.Info("avatar processed", zap.String("avatar_id", event.AvatarID))

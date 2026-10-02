@@ -35,25 +35,26 @@ func NewAvatarRepo(db *pgxpool.Pool, objects ObjectStore) *Repo {
 
 var avatarsTable = goqu.T("avatars")
 
-func (r *Repo) Upload(ctx context.Context, id, userID, fileName, mimeType, s3Key string, size int64, body []byte) (entity.Avatar, error) {
+func (r *Repo) Upload(ctx context.Context, opt entity.AvatarOpt, body []byte) (entity.Avatar, error) {
 	if r.objects == nil {
 		return entity.Avatar{}, errors.New("object storage is not configured")
 	}
-	if err := r.objects.Put(ctx, s3Key, mimeType, body); err != nil {
+	if err := r.objects.Put(ctx, opt.S3Key, opt.MimeType, body); err != nil {
 		return entity.Avatar{}, fmt.Errorf("upload: %w", err)
 	}
 
 	sql, args, err := r.builder.Insert(avatarsTable).
 		Prepared(true).
 		Rows(goqu.Record{
-			"id":                id,
-			"user_id":           userID,
-			"file_name":         fileName,
-			"mime_type":         mimeType,
-			"size_bytes":        size,
-			"s3_key":            s3Key,
-			"upload_status":     "uploaded",
-			"processing_status": "processing",
+			"id":                opt.ID,
+			"user_id":           opt.UserID,
+			"file_name":         opt.FileName,
+			"mime_type":         opt.MimeType,
+			"size_bytes":        opt.Size,
+			"s3_key":            opt.S3Key,
+			"upload_status":     entity.Uploaded,
+			"processing_status": entity.Processing,
+			"e_tag":             opt.Etag,
 		}).
 		Returning("id", "user_id", "processing_status", "created_at").
 		ToSQL()
@@ -77,8 +78,9 @@ func (r *Repo) SelectByID(ctx context.Context, id string) (entity.AvatarObject, 
 	var (
 		obj    entity.AvatarObject
 		thumbs []byte
+		etags  []byte
 	)
-	err = r.db.QueryRow(ctx, query, args...).Scan(&obj.MimeType, &obj.S3Key, &thumbs)
+	err = r.db.QueryRow(ctx, query, args...).Scan(&obj.MimeType, &obj.S3Key, &thumbs, &obj.ETag, &etags)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return entity.AvatarObject{}, ErrNotFound
 	}
@@ -90,6 +92,10 @@ func (r *Repo) SelectByID(ctx context.Context, id string) (entity.AvatarObject, 
 	// ponytail: thumbnail_s3_keys is {"100x100":"s3-key","300x300":"s3-key"}.
 	// An array of objects needs a new decoder.
 	obj.Thumbnails, err = decodeThumbKeys(thumbs)
+	if err != nil {
+		return entity.AvatarObject{}, err
+	}
+	obj.ThumbnailETags, err = decodeThumbKeys(etags)
 	if err != nil {
 		return entity.AvatarObject{}, err
 	}
@@ -110,7 +116,7 @@ func (r *Repo) GetObject(ctx context.Context, key string) ([]byte, error) {
 func (r *Repo) AvatarByID(id string) *goqu.SelectDataset {
 	return r.builder.From(avatarsTable).
 		Prepared(true).
-		Select("mime_type", "s3_key", "thumbnail_s3_keys").
+		Select("mime_type", "s3_key", "thumbnail_s3_keys", "e_tag", "thumbnail_etags").
 		Where(
 			goqu.C("id").Eq(goqu.Cast(goqu.V(id), "uuid")),
 			goqu.C("deleted_at").IsNull(),
@@ -125,16 +131,21 @@ func (r *Repo) GetAvatar(ctx context.Context, id string) (StoredAvatar, error) {
 	return r.scanStored(ctx, query, args)
 }
 
-func (r *Repo) UpdateProcessingStatus(ctx context.Context, id, status string, thumbs map[string]string) error {
+func (r *Repo) UpdateProcessingStatus(ctx context.Context, id string, status entity.ProcessingStatus, thumbs map[string]string, etags map[string]string) error {
 	raw, err := json.Marshal(thumbs)
 	if err != nil {
 		return fmt.Errorf("encode thumbnail keys: %w", err)
+	}
+	rawETags, err := json.Marshal(etags)
+	if err != nil {
+		return fmt.Errorf("encode thumbnail etags: %w", err)
 	}
 	sql, args, err := r.builder.Update(avatarsTable).
 		Prepared(true).
 		Set(goqu.Record{
 			"processing_status": status,
 			"thumbnail_s3_keys": goqu.Cast(goqu.V(string(raw)), "jsonb"),
+			"thumbnail_etags":   goqu.Cast(goqu.V(string(rawETags)), "jsonb"),
 			"updated_at":        goqu.L("now()"),
 		}).
 		Where(
@@ -331,7 +342,7 @@ func (r *Repo) scanStored(ctx context.Context, query string, args []any) (Stored
 	var (
 		avatar    StoredAvatar
 		thumbs    []byte
-		status    *string
+		status    *entity.ProcessingStatus
 		deletedAt *time.Time
 	)
 	err := r.db.QueryRow(ctx, query, args...).Scan(

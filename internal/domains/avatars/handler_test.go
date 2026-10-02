@@ -127,8 +127,12 @@ func TestGetAvatarByID(t *testing.T) {
 				ID:       id,
 				MimeType: string(entity.ImageJpeg),
 				S3Key:    "avatars/original",
+				ETag:     `"stored"`,
 				Thumbnails: map[string]string{
 					"100x100": "avatars/100",
+				},
+				ThumbnailETags: map[string]string{
+					"100x100": `"thumb"`,
 				},
 			},
 			bodies: map[string][]byte{
@@ -147,7 +151,7 @@ func TestGetAvatarByID(t *testing.T) {
 		require.Equal(t, original, rec.Body.Bytes())
 		require.Equal(t, "image/jpeg", rec.Header().Get("Content-Type"))
 		require.Equal(t, "max-age=86400", rec.Header().Get("Cache-Control"))
-		require.NotEmpty(t, rec.Header().Get("ETag"))
+		require.Equal(t, `"stored"`, rec.Header().Get("ETag"))
 	})
 
 	t.Run("thumbnail", func(t *testing.T) {
@@ -157,6 +161,7 @@ func TestGetAvatarByID(t *testing.T) {
 
 		require.Equal(t, http.StatusOK, rec.Code)
 		require.Equal(t, thumb, rec.Body.Bytes())
+		require.Equal(t, `"thumb"`, rec.Header().Get("ETag"))
 	})
 
 	t.Run("format must match stored mime", func(t *testing.T) {
@@ -174,13 +179,14 @@ func TestGetAvatarByID(t *testing.T) {
 
 		store := repo()
 		rec := doRequest(t, store, http.MethodGet, "/api/v1/avatars/"+id, "")
-		etag := rec.Header().Get("ETag")
+		require.Equal(t, 1, store.gets)
 
 		again := doRaw(t, store, http.MethodGet, "/api/v1/avatars/"+id, func(req *http.Request) {
-			req.Header.Set("If-None-Match", etag)
+			req.Header.Set("If-None-Match", rec.Header().Get("ETag"))
 		})
 		require.Equal(t, http.StatusNotModified, again.Code)
 		require.Empty(t, again.Body.Bytes())
+		require.Equal(t, 1, store.gets)
 	})
 
 	t.Run("missing", func(t *testing.T) {
@@ -366,6 +372,7 @@ type stubRepo struct {
 	object     entity.AvatarObject
 	objectErr  error
 	bodies     map[string][]byte
+	gets       int
 	getErr     error
 	meta       entity.AvatarMetadata
 	metaErr    error
@@ -375,8 +382,8 @@ type nopPublisher struct{}
 
 func (nopPublisher) Publish(context.Context, string, string, any) error { return nil }
 
-func (s *stubRepo) Upload(_ context.Context, id, userID, fileName, mimeType, s3Key string, size int64, body []byte) (entity.Avatar, error) {
-	return entity.Avatar{ID: id, UserID: userID, Status: "processing"}, nil
+func (s *stubRepo) Upload(_ context.Context, opt entity.AvatarOpt, _ []byte) (entity.Avatar, error) {
+	return entity.Avatar{ID: opt.ID, UserID: opt.UserID, Status: "processing"}, nil
 }
 
 func (s *stubRepo) DeleteByID(context.Context, string, string) (avatars.Removal, error) {
@@ -410,6 +417,7 @@ func (s *stubRepo) SelectByID(context.Context, string) (entity.AvatarObject, err
 }
 
 func (s *stubRepo) GetObject(_ context.Context, key string) ([]byte, error) {
+	s.gets++
 	if s.getErr != nil {
 		return nil, s.getErr
 	}

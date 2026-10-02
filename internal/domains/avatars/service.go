@@ -42,12 +42,12 @@ type (
 		UserID           string
 		S3Key            string
 		Thumbnails       map[string]string
-		ProcessingStatus string
+		ProcessingStatus entity.ProcessingStatus
 		Deleted          bool
 	}
 
 	RepoProvider interface {
-		Upload(ctx context.Context, id, userID, fileName, mimeType, s3Key string, size int64, body []byte) (entity.Avatar, error)
+		Upload(ctx context.Context, opt entity.AvatarOpt, body []byte) (entity.Avatar, error)
 		SelectByID(ctx context.Context, id string) (entity.AvatarObject, error)
 		GetObject(ctx context.Context, key string) ([]byte, error)
 		DeleteByID(ctx context.Context, avatarID, userID string) (Removal, error)
@@ -85,17 +85,27 @@ func (s *Service) Upload(ctx context.Context, in UploadInput) (entity.Avatar, er
 
 	id := uuid.NewString()
 	key := fmt.Sprintf("avatars/%s/%s/original", in.UserID, id)
-	avatar, err := s.repo.Upload(ctx, id, in.UserID, in.FileName, mime, key, int64(len(in.Body)), in.Body)
+	etag := FileETag(in.Body)
+	opt := entity.AvatarOpt{
+		ID:       id,
+		UserID:   in.UserID,
+		FileName: in.FileName,
+		MimeType: mime,
+		S3Key:    key,
+		Etag:     etag,
+		Size:     int64(len(in.Body)),
+	}
+	avatar, err := s.repo.Upload(ctx, opt, in.Body)
 	if err != nil {
 		return entity.Avatar{}, fmt.Errorf("upload avatar: %w", err)
 	}
-	if err := s.PublishUploadEvent(ctx, avatar.ID, avatar.UserID, key); err != nil {
+	if err := s.publishUploadEvent(ctx, avatar.ID, avatar.UserID, key); err != nil {
 		return entity.Avatar{}, err
 	}
 	return withAvatarURL(avatar), nil
 }
 
-func (s *Service) PublishUploadEvent(ctx context.Context, avatarID, userID, s3Key string) error {
+func (s *Service) publishUploadEvent(ctx context.Context, avatarID, userID, s3Key string) error {
 	event := broker.AvatarUploadEvent{
 		AvatarID: avatarID,
 		UserID:   userID,
@@ -107,7 +117,7 @@ func (s *Service) PublishUploadEvent(ctx context.Context, avatarID, userID, s3Ke
 	return nil
 }
 
-func (s *Service) PublishDeleteEvent(ctx context.Context, avatarID string, s3Keys []string) error {
+func (s *Service) publishDeleteEvent(ctx context.Context, avatarID string, s3Keys []string) error {
 	event := broker.AvatarDeleteEvent{
 		AvatarID: avatarID,
 		S3Keys:   s3Keys,
@@ -145,21 +155,30 @@ func (s *Service) SelectByID(ctx context.Context, req entity.AvatarReq) (entity.
 		return entity.S3AvatarFile{}, ErrNotFound
 	}
 
-	body, err := s.repo.GetObject(ctx, key)
-	if err != nil {
-		return entity.S3AvatarFile{}, fmt.Errorf("read avatar file: %w", err)
-	}
-
 	contentType := obj.MimeType
 	if key != obj.S3Key {
 		contentType = string(entity.ImageJpeg)
 	}
-	sum := sha256.Sum256(body)
 	return entity.S3AvatarFile{
 		ContentType: contentType,
-		Body:        body,
-		ETag:        fmt.Sprintf("\"%x\"", sum[:8]),
+		Key:         key,
+		ETag:        etagFor(obj, req.Size),
 	}, nil
+}
+
+func etagFor(obj entity.AvatarObject, size string) string {
+	if size == "" || size == string(entity.ThumbnailOriginal) {
+		return obj.ETag
+	}
+	return obj.ThumbnailETags[size]
+}
+
+func (s *Service) Read(ctx context.Context, key string) ([]byte, error) {
+	body, err := s.repo.GetObject(ctx, key)
+	if err != nil {
+		return nil, fmt.Errorf("read avatar file: %w", err)
+	}
+	return body, nil
 }
 
 // objectKey selects the S3 file key for the requested size
@@ -198,7 +217,7 @@ func (s *Service) DeleteByID(ctx context.Context, actorID, avatarID string) erro
 	if err != nil {
 		return fmt.Errorf("delete avatar: %w", err)
 	}
-	return s.PublishDeleteEvent(ctx, removed.ID, removed.S3Keys)
+	return s.publishDeleteEvent(ctx, removed.ID, removed.S3Keys)
 }
 
 func (s *Service) SelectAvatarMeta(ctx context.Context, id string) (entity.AvatarMetadata, error) {
@@ -228,7 +247,7 @@ func (s *Service) DeleteCurrent(ctx context.Context, actorID, userID string) err
 	if err != nil {
 		return fmt.Errorf("delete: %w", err)
 	}
-	return s.PublishDeleteEvent(ctx, removed.ID, removed.S3Keys)
+	return s.publishDeleteEvent(ctx, removed.ID, removed.S3Keys)
 }
 
 func (s *Service) SelectUserAvatars(ctx context.Context, userID string) ([]entity.Avatar, error) {
@@ -248,4 +267,9 @@ func (s *Service) SelectUserAvatars(ctx context.Context, userID string) ([]entit
 func withAvatarURL(avatar entity.Avatar) entity.Avatar {
 	avatar.URL = avatarURLPrefix + avatar.ID
 	return avatar
+}
+
+func FileETag(body []byte) string {
+	sum := sha256.Sum256(body)
+	return fmt.Sprintf("\"%x\"", sum[:8])
 }

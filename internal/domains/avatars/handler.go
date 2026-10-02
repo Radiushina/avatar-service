@@ -1,6 +1,7 @@
 package avatars
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -23,6 +24,7 @@ type (
 	ServiceProvider interface {
 		Upload(ctx context.Context, in UploadInput) (entity.Avatar, error)
 		SelectByID(ctx context.Context, req entity.AvatarReq) (entity.S3AvatarFile, error)
+		Read(ctx context.Context, key string) ([]byte, error)
 		DeleteByID(ctx context.Context, actorID, avatarID string) error
 		SelectAvatarMeta(ctx context.Context, id string) (entity.AvatarMetadata, error)
 		SelectCurrent(ctx context.Context, userID string) (entity.Avatar, error)
@@ -122,13 +124,15 @@ func (h *avatarRouter) getAvatarByID(c *echo.Context) error {
 
 	c.Response().Header().Set(echo.HeaderCacheControl, "max-age=86400")
 	c.Response().Header().Set("ETag", file.ETag)
-	if c.Request().Header.Get("If-None-Match") == file.ETag {
+	if file.ETag != "" && c.Request().Header.Get("If-None-Match") == file.ETag {
 		return c.NoContent(http.StatusNotModified)
 	}
-	// A Stream could have been used, but Blob was chosen because an ETag needs to be provided.
-	// The ETag must be calculated in advance—upon upload—and stored in the database, since the
-	// header is sent before the body, making it impossible to calculate the hash of the entire file while streaming.
-	return c.Blob(http.StatusOK, file.ContentType, file.Body)
+
+	body, err := h.avatar.Read(c.Request().Context(), file.Key)
+	if err != nil {
+		return h.writeServiceErr(c, err)
+	}
+	return c.Stream(http.StatusOK, file.ContentType, bytes.NewReader(body))
 }
 
 func (h *avatarRouter) deleteAvatarByID(c *echo.Context) error {

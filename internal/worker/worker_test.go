@@ -12,6 +12,7 @@ import (
 
 	"github.com/Radiushina/avatar-service/internal/broker"
 	"github.com/Radiushina/avatar-service/internal/domains/avatars"
+	"github.com/Radiushina/avatar-service/internal/entity"
 	"github.com/Radiushina/avatar-service/internal/worker"
 	"github.com/stretchr/testify/require"
 )
@@ -35,11 +36,15 @@ func TestHandleUploadEvent(t *testing.T) {
 		S3Key:    "avatars/original",
 	})
 	require.NoError(t, w.HandleUploadEvent(t.Context(), body))
-	require.Equal(t, "completed", repo.status)
+	require.Equal(t, entity.Completed, repo.status)
 	require.Equal(t, map[string]string{
 		"100x100": "thumbnails/" + id + "/100x100.jpg",
 		"300x300": "thumbnails/" + id + "/300x300.jpg",
 	}, repo.thumbs)
+	require.Equal(t, map[string]string{
+		"100x100": avatars.FileETag(store.objects["thumbnails/"+id+"/100x100.jpg"]),
+		"300x300": avatars.FileETag(store.objects["thumbnails/"+id+"/300x300.jpg"]),
+	}, repo.etags)
 
 	small := decodeJPEG(t, store.objects["thumbnails/"+id+"/100x100.jpg"])
 	require.Equal(t, image.Rect(0, 0, 100, 100), small.Bounds())
@@ -95,8 +100,9 @@ func decodeJPEG(t *testing.T, raw []byte) image.Image {
 
 type fakeRepo struct {
 	avatar  avatars.StoredAvatar
-	status  string
+	status  entity.ProcessingStatus
 	thumbs  map[string]string
+	etags   map[string]string
 	updates int
 }
 
@@ -104,10 +110,11 @@ func (f *fakeRepo) GetAvatar(context.Context, string) (avatars.StoredAvatar, err
 	return f.avatar, nil
 }
 
-func (f *fakeRepo) UpdateProcessingStatus(_ context.Context, _, status string, thumbs map[string]string) error {
+func (f *fakeRepo) UpdateProcessingStatus(_ context.Context, _ string, status entity.ProcessingStatus, thumbs, etags map[string]string) error {
 	f.updates++
 	f.status = status
 	f.thumbs = thumbs
+	f.etags = etags
 	f.avatar.ProcessingStatus = status
 	return nil
 }

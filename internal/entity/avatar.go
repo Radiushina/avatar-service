@@ -8,6 +8,9 @@ import (
 type MimeType string
 type ThumbnailSize string
 
+type UploadStatus string
+type ProcessingStatus string
+
 const (
 	ImageJpeg MimeType = "image/jpeg"
 	ImagePng  MimeType = "image/png"
@@ -16,6 +19,11 @@ const (
 	ThumbnailOriginal ThumbnailSize = "original"
 	ThumbnailSmol     ThumbnailSize = "100x100"
 	ThumbnailMedium   ThumbnailSize = "300x300"
+
+	Uploaded UploadStatus = "uploaded"
+
+	Processing ProcessingStatus = "processing"
+	Completed  ProcessingStatus = "completed"
 )
 
 type Avatar struct {
@@ -24,6 +32,16 @@ type Avatar struct {
 	URL       string    `json:"url" db:"avatars.url"`
 	Status    string    `json:"status"`
 	CreatedAt time.Time `json:"created_at" db:"avatars.created_at"`
+}
+
+type AvatarOpt struct {
+	ID       string
+	UserID   string
+	FileName string
+	MimeType string
+	S3Key    string
+	Etag     string
+	Size     int64
 }
 
 type AvatarMetadata struct {
@@ -55,15 +73,17 @@ type AvatarReq struct {
 }
 
 type AvatarObject struct {
-	ID         string
-	MimeType   string
-	S3Key      string
-	Thumbnails map[string]string
+	ID             string
+	MimeType       string
+	S3Key          string
+	Thumbnails     map[string]string
+	ETag           string
+	ThumbnailETags map[string]string
 }
 
 type S3AvatarFile struct {
 	ContentType string
-	Body        []byte
+	Key         string
 	ETag        string
 }
 

@@ -10,7 +10,9 @@ CREATE TABLE avatars(
     processing_status VARCHAR(50)              DEFAULT 'pending',
     created_at        TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at        TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    deleted_at        TIMESTAMP WITH TIME ZONE
+    deleted_at        TIMESTAMP WITH TIME ZONE,
+    e_tag             TEXT         NOT NULL,
+    thumbnail_etags   JSONB
 );
 
 CREATE INDEX idx_avatars_user_id ON avatars (user_id) WHERE deleted_at IS NULL;

@@ -2,6 +2,7 @@ package di
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/Radiushina/avatar-service/cmd/server/di/providers"
 	"github.com/Radiushina/avatar-service/internal/config"
@@ -15,5 +16,8 @@ type App struct {
 }
 
 func (a *App) Run(ctx context.Context) error {
-	return a.server.Start(ctx)
+	if err := a.server.Start(ctx); err != nil {
+		return fmt.Errorf("start server: %w", err)
+	}
+	return nil
 }

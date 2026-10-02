@@ -34,7 +34,7 @@ var (
 
 // New поднимает singleton Postgres (testcontainers), создаёт отдельную БД для теста,
 // накатывает миграции и возвращает пул подключений к этой БД.
-func New(t *testing.T) (*pgxpool.Pool, string, string) {
+func New(t *testing.T) (pool *pgxpool.Pool, connStr, ip string) {
 	t.Helper()
 
 	singleton.Do(func() {

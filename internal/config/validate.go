@@ -27,5 +27,8 @@ func (c *Config) Validate() error {
 	if strings.TrimSpace(c.S3.SecretKey) == "" {
 		return errors.New("s3.secret_key is required")
 	}
+	if strings.TrimSpace(c.RabbitMQ.URL) == "" {
+		return errors.New("rabbitmq.url is required")
+	}
 	return nil
 }

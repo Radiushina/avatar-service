@@ -1,4 +1,4 @@
-package logger
+package logger_test
 
 import (
 	"io"
@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/Radiushina/avatar-service/internal/domains/logger"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
@@ -50,7 +51,7 @@ func TestLoggingMiddleware(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			core, logs := observer.New(zap.InfoLevel)
-			h := LoggingMiddleware(zap.New(core), http.HandlerFunc(tc.handle))
+			h := logger.LoggingMiddleware(zap.New(core), http.HandlerFunc(tc.handle))
 			req := httptest.NewRequest(tc.method, tc.url, nil)
 			req.Header.Set("Authorization", "Bearer super-secret-token")
 			rr := httptest.NewRecorder()

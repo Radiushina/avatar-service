@@ -5,6 +5,7 @@
 
 # Config
 .env
+config.yml
 
 # Binaries for programs and plugins
 *.exe
@@ -25,6 +26,7 @@ output/allure-results
 output/allure-result
 output/allure-report
 *.html
+!web/**
 report.xml
 
 # Dependency directories (remove the comment below to include it)

@@ -13,5 +13,5 @@ func NewLogger(cfg *config.Config) (*zap.Logger, func(), error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("logger: %w", err)
 	}
-	return zl, func() { _ = zl.Sync() }, nil
+	return zl, func() { applogger.Sync(zl) }, nil
 }

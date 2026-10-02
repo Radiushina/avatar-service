@@ -9,6 +9,8 @@ s3:
   endpoint: "http://localhost:9000"
   region: us-east-1
   bucket: avatars
-  access_key: minio
-  secret_key: minio12345
+  access_key: your-access-key
+  secret_key: your-secret-key
   path_style: true
+rabbitmq:
+  url: amqp://user:password@localhost:5672/

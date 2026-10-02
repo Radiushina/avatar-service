@@ -3,11 +3,15 @@ package providers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/Radiushina/avatar-service/internal/config"
 	"github.com/Radiushina/avatar-service/internal/domains/avatars"
+	"github.com/Radiushina/avatar-service/internal/domains/health"
+	applogger "github.com/Radiushina/avatar-service/internal/domains/logger"
+	"github.com/Radiushina/avatar-service/internal/domains/webui"
 	"github.com/labstack/echo/v5"
 	"go.uber.org/zap"
 )
@@ -17,13 +21,25 @@ type Servers struct {
 	log  *zap.Logger
 }
 
-func NewHTTPServer(cfg *config.Config, avatar avatars.ServiceProvider) *http.Server {
+func NewHTTPServer(
+	cfg *config.Config,
+	log *zap.Logger,
+	avatar avatars.ServiceProvider,
+	dbCheck health.DBHealthCheckProvider,
+	s3 health.S3HealthCheckProvider,
+	broker health.BrokerHealthCheckProvider,
+) (*http.Server, error) {
 	e := echo.New()
-	avatars.NewAvatarRouter(e.Group("/api/v1"), avatar)
-	return &http.Server{
-		Addr:    cfg.Server.HTTP.Address,
-		Handler: e,
+	avatars.NewAvatarRouter(e.Group("/api/v1"), avatar, log)
+	health.NewHealthCheckRouter(e.Group(""), log, dbCheck, s3, broker)
+	if err := webui.NewRouter(e.Group("/web"), avatar, "web/templates", log); err != nil {
+		return nil, fmt.Errorf("web router: %w", err)
 	}
+	return &http.Server{
+		Addr:              cfg.Server.HTTP.Address,
+		Handler:           applogger.LoggingMiddleware(log, e),
+		ReadHeaderTimeout: 5 * time.Second,
+	}, nil
 }
 
 func NewServers(httpServer *http.Server, log *zap.Logger) *Servers {
@@ -54,7 +70,7 @@ func (s *Servers) Start(ctx context.Context) error {
 		defer cancel()
 		if err := s.http.Shutdown(shutCtx); err != nil {
 			s.log.Error("http shutdown", zap.Error(err))
-			return err
+			return fmt.Errorf("http shutdown: %w", err)
 		}
 
 		s.log.Info("HTTP server stopped")

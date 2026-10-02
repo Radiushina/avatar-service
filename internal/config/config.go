@@ -5,6 +5,7 @@ type Config struct {
 	Database DatabaseConfig `koanf:"database" yaml:"database"`
 	Log      LogConfig      `koanf:"log" yaml:"log"`
 	S3       S3Config       `koanf:"s3" yaml:"s3"`
+	RabbitMQ RabbitConfig   `koanf:"rabbitmq" yaml:"rabbitmq"`
 }
 
 type ServerConfig struct {
@@ -30,4 +31,8 @@ type S3Config struct {
 	AccessKey string `koanf:"access_key" yaml:"access_key" env:"S3_ACCESS_KEY" flag:"s3-access-key"`
 	SecretKey string `koanf:"secret_key" yaml:"secret_key" env:"S3_SECRET_KEY" flag:"s3-secret-key"`
 	PathStyle bool   `koanf:"path_style" yaml:"path_style" env:"S3_PATH_STYLE" flag:"s3-path-style"`
+}
+
+type RabbitConfig struct {
+	URL string `koanf:"url" yaml:"url" env:"RABBITMQ_URL" flag:"rabbitmq-url"`
 }

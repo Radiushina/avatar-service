@@ -11,6 +11,7 @@ import (
 	"github.com/Radiushina/avatar-service/internal/domains/avatars"
 	"github.com/Radiushina/avatar-service/internal/entity"
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -71,26 +72,23 @@ func New(repo AvatarRepo, objects ObjectStore, resizer Resizer, mq Consumer, pub
 
 func (w *Worker) Run(ctx context.Context) error {
 	w.log.Info("avatar worker started")
-	errCh := make(chan error, 2)
-	go func() {
-		errCh <- w.mq.Listen(ctx, broker.KeyUploaded, w.HandleUploadEvent)
-	}()
-	go func() {
-		errCh <- w.mq.Listen(ctx, broker.KeyDeleted, w.HandleDeleteEvent)
-	}()
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		return w.mq.Listen(ctx, broker.KeyUploaded, w.HandleUploadEvent)
+	})
+	g.Go(func() error {
+		return w.mq.Listen(ctx, broker.KeyDeleted, w.HandleDeleteEvent)
+	})
 	if w.publisher != nil {
-		go w.relayUploads(ctx)
-	}
-
-	select {
-	case <-ctx.Done():
-		return nil
-	case err := <-errCh:
-		if errors.Is(err, context.Canceled) {
+		g.Go(func() error {
+			w.relayUploads(ctx)
 			return nil
-		}
+		})
+	}
+	if err := g.Wait(); err != nil && !errors.Is(err, context.Canceled) {
 		return err
 	}
+	return nil
 }
 
 // HandleUploadEvent creates 100x100 and 300x300 thumbnails for an uploaded avatar.

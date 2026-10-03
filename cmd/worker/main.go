@@ -50,8 +50,14 @@ func run() error {
 	}
 	defer client.Close()
 
+	publisher, err := client.Publisher(ctx)
+	if err != nil {
+		applogger.LogError(log, "rabbitmq publisher", err)
+		return fmt.Errorf("rabbitmq publisher: %w", err)
+	}
+
 	store := providers.NewS3Store(cfg)
-	w := worker.New(avatars.NewAvatarRepo(pool, store), store, worker.NewResizer(), client, log)
+	w := worker.New(avatars.NewAvatarRepo(pool, store), store, worker.NewResizer(), client, publisher, log)
 	if err := w.Run(ctx); err != nil {
 		applogger.LogError(log, "run worker", err)
 		return fmt.Errorf("run worker: %w", err)

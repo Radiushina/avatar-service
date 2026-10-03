@@ -19,6 +19,12 @@ type ObjectStore interface {
 	Put(ctx context.Context, key, contentType string, body []byte) error
 }
 
+type PendingUpload struct {
+	ID     string
+	UserID string
+	S3Key  string
+}
+
 type Repo struct {
 	db      *pgxpool.Pool
 	objects ObjectStore
@@ -229,6 +235,69 @@ func (r *Repo) SelectAvatarMeta(ctx context.Context, id string) (entity.AvatarMe
 	}
 	meta.Thumbnails = ThumbnailsFromKeys(keys)
 	return meta, nil
+}
+
+func (r *Repo) MarkUploadPublished(ctx context.Context, id string) error {
+	sql, args, err := r.builder.Update(avatarsTable).
+		Prepared(true).
+		Set(goqu.Record{
+			"upload_published_at": goqu.L("now()"),
+			"updated_at":          goqu.L("now()"),
+		}).
+		Where(goqu.C("id").Eq(goqu.Cast(goqu.V(id), "uuid"))).
+		ToSQL()
+	if err != nil {
+		return fmt.Errorf("mark upload published: %w", err)
+	}
+	if _, err := r.db.Exec(ctx, sql, args...); err != nil {
+		return fmt.Errorf("mark upload published: %w", err)
+	}
+	return nil
+}
+
+func (r *Repo) ListUploadsToPublish(ctx context.Context) ([]PendingUpload, error) {
+	sql, args, err := r.uploadsToPublish().ToSQL()
+	if err != nil {
+		return nil, fmt.Errorf("list uploads to publish: %w", err)
+	}
+
+	rows, err := r.db.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list uploads to publish: %w", err)
+	}
+	defer rows.Close()
+
+	list := make([]PendingUpload, 0)
+	for rows.Next() {
+		var row PendingUpload
+		if err := rows.Scan(&row.ID, &row.UserID, &row.S3Key); err != nil {
+			return nil, fmt.Errorf("list uploads to publish: %w", err)
+		}
+		list = append(list, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list uploads to publish: %w", err)
+	}
+	return list, nil
+}
+
+func (r *Repo) uploadsToPublish() *goqu.SelectDataset {
+	return r.builder.From(avatarsTable).
+		Prepared(true).
+		Select("id", "user_id", "s3_key").
+		Where(
+			goqu.C("deleted_at").IsNull(),
+			goqu.C("processing_status").Eq(entity.Processing),
+			goqu.Or(
+				goqu.And(
+					goqu.C("upload_published_at").IsNull(),
+					goqu.C("created_at").Lt(goqu.L("now() - interval '15 seconds'")),
+				),
+				goqu.C("upload_published_at").Lt(goqu.L("now() - interval '5 minutes'")),
+			),
+		).
+		Order(goqu.C("created_at").Asc()).
+		Limit(50)
 }
 
 func ThumbnailsFromKeys(keys map[string]string) []entity.Thumbnail {

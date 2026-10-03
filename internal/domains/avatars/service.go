@@ -8,6 +8,7 @@ import (
 	"github.com/Radiushina/avatar-service/internal/broker"
 	"github.com/Radiushina/avatar-service/internal/entity"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 const (
@@ -19,6 +20,7 @@ type (
 	Service struct {
 		repo      RepoProvider
 		publisher Publisher
+		log       *zap.Logger
 	}
 
 	UploadInput struct {
@@ -55,13 +57,18 @@ type (
 		SelectCurrent(ctx context.Context, userID string) (entity.Avatar, error)
 		DeleteCurrent(ctx context.Context, userID string) (Removal, error)
 		SelectUserAvatars(ctx context.Context, userID string) ([]entity.Avatar, error)
+		MarkUploadPublished(ctx context.Context, id string) error
 	}
 )
 
-func NewService(repo RepoProvider, publisher Publisher) *Service {
+func NewService(repo RepoProvider, publisher Publisher, log *zap.Logger) *Service {
+	if log == nil {
+		log = zap.NewNop()
+	}
 	return &Service{
 		repo:      repo,
 		publisher: publisher,
+		log:       log,
 	}
 }
 
@@ -100,7 +107,13 @@ func (s *Service) Upload(ctx context.Context, in UploadInput) (entity.Avatar, er
 		return entity.Avatar{}, fmt.Errorf("upload avatar: %w", err)
 	}
 	if err := s.publishUploadEvent(ctx, avatar.ID, avatar.UserID, key); err != nil {
-		return entity.Avatar{}, err
+		// upload_published_at stays NULL; the worker relays the event later.
+		s.log.Error("publish upload event", zap.String("avatar_id", avatar.ID), zap.Error(err))
+		return withAvatarURL(avatar), nil
+	}
+	if err := s.repo.MarkUploadPublished(ctx, avatar.ID); err != nil {
+		// The event is already queued. A missing timestamp only causes a duplicate publish.
+		s.log.Error("mark upload published", zap.String("avatar_id", avatar.ID), zap.Error(err))
 	}
 	return withAvatarURL(avatar), nil
 }

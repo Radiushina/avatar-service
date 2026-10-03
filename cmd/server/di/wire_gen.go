@@ -46,7 +46,7 @@ func InjectApp(ctx context.Context) (*App, func(), error) {
 		cleanup()
 		return nil, nil, err
 	}
-	service := avatars.NewService(repo, publisher)
+	service := avatars.NewService(repo, publisher, logger)
 	postgres := providers.NewDBHealth(pool, logger)
 	server, err := providers.NewHTTPServer(config, logger, service, postgres, s3Store, client)
 	if err != nil {

@@ -28,7 +28,7 @@ func TestHandleUploadEvent(t *testing.T) {
 	store := &memStore{objects: map[string][]byte{
 		"avatars/original": mustPNG(t, 8, 4),
 	}}
-	w := worker.New(repo, store, worker.NewResizer(), nil, nil)
+	w := worker.New(repo, store, worker.NewResizer(), nil, nil, nil)
 
 	body := mustJSON(t, broker.AvatarUploadEvent{
 		AvatarID: id,
@@ -64,7 +64,7 @@ func TestHandleDeleteEvent(t *testing.T) {
 		"avatars/original":          []byte("a"),
 		"thumbnails/id/100x100.jpg": []byte("b"),
 	}}
-	w := worker.New(&fakeRepo{}, store, worker.NewResizer(), nil, nil)
+	w := worker.New(&fakeRepo{}, store, worker.NewResizer(), nil, nil, nil)
 	body := mustJSON(t, broker.AvatarDeleteEvent{
 		AvatarID: "id",
 		S3Keys:   []string{"avatars/original", "thumbnails/id/100x100.jpg"},
@@ -108,6 +108,14 @@ type fakeRepo struct {
 
 func (f *fakeRepo) GetAvatar(context.Context, string) (avatars.StoredAvatar, error) {
 	return f.avatar, nil
+}
+
+func (f *fakeRepo) ListUploadsToPublish(context.Context) ([]avatars.PendingUpload, error) {
+	return nil, nil
+}
+
+func (f *fakeRepo) MarkUploadPublished(context.Context, string) error {
+	return nil
 }
 
 func (f *fakeRepo) UpdateProcessingStatus(_ context.Context, _ string, status entity.ProcessingStatus, thumbs, etags map[string]string) error {

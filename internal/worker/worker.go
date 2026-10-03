@@ -14,7 +14,8 @@ import (
 )
 
 const (
-	maxAttempts = 5
+	maxAttempts   = 5
+	relayInterval = 10 * time.Second
 
 	thumbSmall  = 100
 	thumbMedium = 300
@@ -24,6 +25,12 @@ type (
 	AvatarRepo interface {
 		GetAvatar(ctx context.Context, id string) (avatars.StoredAvatar, error)
 		UpdateProcessingStatus(ctx context.Context, id string, status entity.ProcessingStatus, thumbs map[string]string, etags map[string]string) error
+		ListUploadsToPublish(ctx context.Context) ([]avatars.PendingUpload, error)
+		MarkUploadPublished(ctx context.Context, id string) error
+	}
+
+	Publisher interface {
+		Publish(ctx context.Context, exchange, routingKey string, event any) error
 	}
 
 	ObjectStore interface {
@@ -37,26 +44,28 @@ type (
 	}
 
 	Worker struct {
-		repo    AvatarRepo
-		objects ObjectStore
-		resizer Resizer
-		mq      Consumer
-		log     *zap.Logger
-		backoff func(attempt int) time.Duration
+		repo      AvatarRepo
+		objects   ObjectStore
+		resizer   Resizer
+		mq        Consumer
+		publisher Publisher
+		log       *zap.Logger
+		backoff   func(attempt int) time.Duration
 	}
 )
 
-func New(repo AvatarRepo, objects ObjectStore, resizer Resizer, mq Consumer, log *zap.Logger) *Worker {
+func New(repo AvatarRepo, objects ObjectStore, resizer Resizer, mq Consumer, publisher Publisher, log *zap.Logger) *Worker {
 	if log == nil {
 		log = zap.NewNop()
 	}
 	return &Worker{
-		repo:    repo,
-		objects: objects,
-		resizer: resizer,
-		mq:      mq,
-		log:     log,
-		backoff: defaultBackoff,
+		repo:      repo,
+		objects:   objects,
+		resizer:   resizer,
+		mq:        mq,
+		publisher: publisher,
+		log:       log,
+		backoff:   defaultBackoff,
 	}
 }
 
@@ -69,6 +78,9 @@ func (w *Worker) Run(ctx context.Context) error {
 	go func() {
 		errCh <- w.mq.Listen(ctx, broker.KeyDeleted, w.HandleDeleteEvent)
 	}()
+	if w.publisher != nil {
+		go w.relayUploads(ctx)
+	}
 
 	select {
 	case <-ctx.Done():
@@ -162,6 +174,43 @@ func (w *Worker) HandleDeleteEvent(ctx context.Context, body []byte) error {
 		}
 		return nil
 	})
+}
+
+func (w *Worker) relayUploads(ctx context.Context) {
+	ticker := time.NewTicker(relayInterval)
+	defer ticker.Stop()
+	w.publishPending(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			w.publishPending(ctx)
+		}
+	}
+}
+
+func (w *Worker) publishPending(ctx context.Context) {
+	rows, err := w.repo.ListUploadsToPublish(ctx)
+	if err != nil {
+		w.log.Error("list uploads to publish", zap.Error(err))
+		return
+	}
+	for _, row := range rows {
+		event := broker.AvatarUploadEvent{
+			AvatarID: row.ID,
+			UserID:   row.UserID,
+			S3Key:    row.S3Key,
+		}
+		if err := w.publisher.Publish(ctx, broker.Exchange, broker.KeyUploaded, event); err != nil {
+			w.log.Error("relay upload event", zap.String("avatar_id", row.ID), zap.Error(err))
+			continue
+		}
+		// Bump the timestamp so a still-processing row is not republished on every tick.
+		if err := w.repo.MarkUploadPublished(ctx, row.ID); err != nil {
+			w.log.Error("mark upload published", zap.String("avatar_id", row.ID), zap.Error(err))
+		}
+	}
 }
 
 func retry(ctx context.Context, backoff func(int) time.Duration, fn func() error) error {

@@ -239,6 +239,29 @@ func TestGetAvatarByID(t *testing.T) {
 	})
 }
 
+func TestUploadSucceedsWhenPublishFails(t *testing.T) {
+	t.Parallel()
+
+	in := avatars.UploadInput{
+		UserID:      "user-1",
+		FileName:    "a.png",
+		ContentType: "image/png",
+		Body:        []byte("png"),
+	}
+
+	failed := &stubRepo{}
+	avatar, err := avatars.NewService(failed, failPublisher{}, zap.NewNop()).Upload(t.Context(), in)
+	require.NoError(t, err)
+	require.NotEmpty(t, avatar.ID)
+	require.False(t, failed.marked)
+
+	published := &stubRepo{}
+	avatar, err = avatars.NewService(published, nopPublisher{}, zap.NewNop()).Upload(t.Context(), in)
+	require.NoError(t, err)
+	require.NotEmpty(t, avatar.ID)
+	require.True(t, published.marked)
+}
+
 func TestInternalErrorIsLogged(t *testing.T) {
 	t.Parallel()
 
@@ -252,7 +275,7 @@ func TestInternalErrorIsLogged(t *testing.T) {
 			S3Key:    "k",
 		},
 		getErr: errors.New("boom"),
-	}, nopPublisher{}), zap.New(core))
+	}, nopPublisher{}, zap.NewNop()), zap.New(core))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/avatars/"+id, nil)
 	rec := httptest.NewRecorder()
@@ -352,7 +375,7 @@ func doRaw(t *testing.T, repo avatars.RepoProvider, method, path string, setup f
 	t.Helper()
 
 	e := echo.New()
-	avatars.NewAvatarRouter(e.Group("/api/v1"), avatars.NewService(repo, nopPublisher{}), zap.NewNop())
+	avatars.NewAvatarRouter(e.Group("/api/v1"), avatars.NewService(repo, nopPublisher{}, zap.NewNop()), zap.NewNop())
 
 	req := httptest.NewRequest(method, path, nil)
 	if setup != nil {
@@ -376,11 +399,18 @@ type stubRepo struct {
 	getErr     error
 	meta       entity.AvatarMetadata
 	metaErr    error
+	marked     bool
 }
 
 type nopPublisher struct{}
 
 func (nopPublisher) Publish(context.Context, string, string, any) error { return nil }
+
+type failPublisher struct{}
+
+func (failPublisher) Publish(context.Context, string, string, any) error {
+	return errors.New("rabbit down")
+}
 
 func (s *stubRepo) Upload(_ context.Context, opt entity.AvatarOpt, _ []byte) (entity.Avatar, error) {
 	return entity.Avatar{ID: opt.ID, UserID: opt.UserID, Status: "processing"}, nil
@@ -444,6 +474,11 @@ func (s *stubRepo) DeleteCurrent(context.Context, string) (avatars.Removal, erro
 	}
 	s.deleted = true
 	return avatars.Removal{ID: "deleted"}, nil
+}
+
+func (s *stubRepo) MarkUploadPublished(context.Context, string) error {
+	s.marked = true
+	return nil
 }
 
 func (s *stubRepo) SelectUserAvatars(context.Context, string) ([]entity.Avatar, error) {

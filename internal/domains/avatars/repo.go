@@ -45,9 +45,6 @@ func (r *Repo) Upload(ctx context.Context, opt entity.AvatarOpt, body []byte) (e
 	if r.objects == nil {
 		return entity.Avatar{}, errors.New("object storage is not configured")
 	}
-	if err := r.objects.Put(ctx, opt.S3Key, opt.MimeType, body); err != nil {
-		return entity.Avatar{}, fmt.Errorf("upload: %w", err)
-	}
 
 	sql, args, err := r.builder.Insert(avatarsTable).
 		Prepared(true).
@@ -60,7 +57,7 @@ func (r *Repo) Upload(ctx context.Context, opt entity.AvatarOpt, body []byte) (e
 			"s3_key":            opt.S3Key,
 			"upload_status":     entity.Uploaded,
 			"processing_status": entity.Processing,
-			"e_tag":             opt.Etag,
+			"e_tag":             opt.ETag,
 		}).
 		Returning("id", "user_id", "processing_status", "created_at").
 		ToSQL()
@@ -72,7 +69,28 @@ func (r *Repo) Upload(ctx context.Context, opt entity.AvatarOpt, body []byte) (e
 	if err := r.db.QueryRow(ctx, sql, args...).Scan(&avatar.ID, &avatar.UserID, &avatar.Status, &avatar.CreatedAt); err != nil {
 		return entity.Avatar{}, fmt.Errorf("insert avatar: %w", err)
 	}
+	if err := r.objects.Put(ctx, opt.S3Key, opt.MimeType, body); err != nil {
+		// The row is already committed as processing. Drop it: the relay would republish a file that is not in S3.
+		if delErr := r.discardUpload(context.WithoutCancel(ctx), opt.ID); delErr != nil {
+			return entity.Avatar{}, fmt.Errorf("upload: %w; %w", err, delErr)
+		}
+		return entity.Avatar{}, fmt.Errorf("upload: %w", err)
+	}
 	return avatar, nil
+}
+
+func (r *Repo) discardUpload(ctx context.Context, id string) error {
+	sql, args, err := r.builder.Delete(avatarsTable).
+		Prepared(true).
+		Where(goqu.C("id").Eq(goqu.Cast(goqu.V(id), "uuid"))).
+		ToSQL()
+	if err != nil {
+		return fmt.Errorf("delete avatar: %w", err)
+	}
+	if _, err := r.db.Exec(ctx, sql, args...); err != nil {
+		return fmt.Errorf("delete avatar: %w", err)
+	}
+	return nil
 }
 
 func (r *Repo) SelectByID(ctx context.Context, id string) (entity.AvatarObject, error) {

@@ -46,7 +46,7 @@ func TestPublishPending(t *testing.T) {
 
 			repo := &relayRepo{pending: pending}
 			pub := &relayPublisher{err: tt.pubErr}
-			ctx, cancel := context.WithCancel(context.Background())
+			ctx, cancel := context.WithCancel(t.Context())
 			w := worker.New(repo, nil, nil, listenFunc(func(ctx context.Context, _ string, _ func(context.Context, []byte) error) error {
 				<-ctx.Done()
 				return ctx.Err()

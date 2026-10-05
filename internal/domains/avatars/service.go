@@ -99,7 +99,7 @@ func (s *Service) Upload(ctx context.Context, in UploadInput) (entity.Avatar, er
 		FileName: in.FileName,
 		MimeType: mime,
 		S3Key:    key,
-		Etag:     etag,
+		ETag:     etag,
 		Size:     int64(len(in.Body)),
 	}
 	avatar, err := s.repo.Upload(ctx, opt, in.Body)

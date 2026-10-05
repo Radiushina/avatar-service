@@ -121,7 +121,7 @@ func TestUpload(t *testing.T) {
 
 			repo := &memRepo{uploadErr: tt.uploadErr, markErr: tt.markErr}
 			pub := &memPub{err: tt.publishErr}
-			got, err := avatars.NewService(repo, pub, nil).Upload(context.Background(), tt.in)
+			got, err := avatars.NewService(repo, pub, nil).Upload(t.Context(), tt.in)
 			if tt.wantErr != nil {
 				require.Error(t, err)
 				if errors.Is(tt.wantErr, avatars.ErrInvalid) || errors.Is(tt.wantErr, avatars.ErrTooLarge) {
@@ -139,7 +139,7 @@ func TestUpload(t *testing.T) {
 			require.Equal(t, tt.wantMime, repo.uploaded.MimeType)
 			require.Equal(t, tt.in.FileName, repo.uploaded.FileName)
 			require.Equal(t, int64(len(tt.in.Body)), repo.uploaded.Size)
-			require.Equal(t, avatars.FileETag(tt.in.Body), repo.uploaded.Etag)
+			require.Equal(t, avatars.FileETag(tt.in.Body), repo.uploaded.ETag)
 			require.Equal(t, "avatars/"+tt.in.UserID+"/"+got.ID+"/original", repo.uploaded.S3Key)
 			require.Equal(t, tt.in.Body, repo.body)
 
@@ -251,7 +251,7 @@ func TestSelectByID(t *testing.T) {
 			t.Parallel()
 
 			repo := &memRepo{object: tt.object, objectErr: tt.objectErr}
-			got, err := avatars.NewService(repo, &memPub{}, nil).SelectByID(context.Background(), tt.req)
+			got, err := avatars.NewService(repo, &memPub{}, nil).SelectByID(t.Context(), tt.req)
 			if tt.wantErr != nil {
 				require.ErrorIs(t, err, tt.wantErr)
 				return
@@ -282,7 +282,7 @@ func TestRead(t *testing.T) {
 			t.Parallel()
 
 			repo := &memRepo{getBody: tt.body, getErr: tt.getErr}
-			got, err := avatars.NewService(repo, &memPub{}, nil).Read(context.Background(), tt.key)
+			got, err := avatars.NewService(repo, &memPub{}, nil).Read(t.Context(), tt.key)
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
 				require.ErrorIs(t, err, tt.getErr)
@@ -349,7 +349,7 @@ func TestDeleteByID(t *testing.T) {
 
 			repo := &memRepo{removal: tt.removal, deleteErr: tt.deleteErr}
 			pub := &memPub{err: tt.publishErr}
-			err := avatars.NewService(repo, pub, nil).DeleteByID(context.Background(), tt.actorID, tt.avatarID)
+			err := avatars.NewService(repo, pub, nil).DeleteByID(t.Context(), tt.actorID, tt.avatarID)
 			if tt.wantErr != nil {
 				require.Error(t, err)
 				if errors.Is(tt.wantErr, avatars.ErrInvalid) || errors.Is(tt.wantErr, avatars.ErrForbidden) {
@@ -424,7 +424,7 @@ func TestSelectAvatarMeta(t *testing.T) {
 			t.Parallel()
 
 			repo := &memRepo{meta: tt.meta, metaErr: tt.metaErr}
-			got, err := avatars.NewService(repo, &memPub{}, nil).SelectAvatarMeta(context.Background(), "id-1")
+			got, err := avatars.NewService(repo, &memPub{}, nil).SelectAvatarMeta(t.Context(), "id-1")
 			if tt.wantErr != nil {
 				require.ErrorIs(t, err, tt.wantErr)
 				return
@@ -456,7 +456,7 @@ func TestSelectCurrent(t *testing.T) {
 			t.Parallel()
 
 			repo := &memRepo{current: tt.avatar, currentErr: tt.err}
-			got, err := avatars.NewService(repo, &memPub{}, nil).SelectCurrent(context.Background(), "user-1")
+			got, err := avatars.NewService(repo, &memPub{}, nil).SelectCurrent(t.Context(), "user-1")
 			if tt.wantErr != nil {
 				require.ErrorIs(t, err, tt.wantErr)
 				return
@@ -516,7 +516,7 @@ func TestDeleteCurrent(t *testing.T) {
 
 			repo := &memRepo{currentRemoval: tt.removal, deleteErr: tt.deleteErr}
 			pub := &memPub{err: tt.publishErr}
-			err := avatars.NewService(repo, pub, nil).DeleteCurrent(context.Background(), tt.actorID, tt.userID)
+			err := avatars.NewService(repo, pub, nil).DeleteCurrent(t.Context(), tt.actorID, tt.userID)
 			if tt.wantErr != nil {
 				require.Error(t, err)
 				if errors.Is(tt.wantErr, avatars.ErrForbidden) || errors.Is(tt.wantErr, avatars.ErrNotFound) {
@@ -572,7 +572,7 @@ func TestSelectUserAvatars(t *testing.T) {
 			t.Parallel()
 
 			repo := &memRepo{list: tt.list, listErr: tt.listErr}
-			got, err := avatars.NewService(repo, &memPub{}, nil).SelectUserAvatars(context.Background(), "user-1")
+			got, err := avatars.NewService(repo, &memPub{}, nil).SelectUserAvatars(t.Context(), "user-1")
 			if tt.wantErr != nil {
 				require.ErrorContains(t, err, tt.wantErr.Error())
 				return

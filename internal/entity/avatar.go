@@ -40,7 +40,7 @@ type AvatarOpt struct {
 	FileName string
 	MimeType string
 	S3Key    string
-	Etag     string
+	ETag     string
 	Size     int64
 }
 

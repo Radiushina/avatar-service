@@ -14,5 +14,6 @@ func DefaultConfig() Config {
 			Region:    "us-east-1",
 			PathStyle: true,
 		},
+		RabbitMQ: RabbitConfig{},
 	}
 }

@@ -11,8 +11,131 @@ tags:
     description: Methods for working with avatars
   - name: User
     description: Methods for handling user avatars
+  - name: Health
+    description: Functionality check
+  - name: Web
+    description: Web-interface
 
 paths:
+  /health:
+    get:
+      operationId: healthcheck
+      summary: Healthcheck
+      description: |
+        Проверка работоспособности.
+        Проверка БД, S3, брокера.
+        JSON ответ со статусами компонентов.
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: './common/objects.yaml#/HealthResponse'
+              example:
+                status: ok
+                components:
+                  database: up
+                  s3: up
+                  broker: up
+        '503':
+          description: One or more components are unavailable
+          content:
+            application/json:
+              schema:
+                $ref: './common/objects.yaml#/HealthResponse'
+              example:
+                status: degraded
+                components:
+                  database: up
+                  s3: down
+                  broker: up
+
+  /web/upload:
+    get:
+      summary: Upload form
+      description: HTML-форма загрузки аватара.
+      tags:
+        - Web
+      responses:
+        '200':
+          description: Upload form
+          content:
+            text/html:
+              schema:
+                type: string
+    post:
+      summary: Handle upload
+      description: |
+        Обработка загрузки аватара из веб-формы.
+        При успехе — редирект в галерею пользователя.
+      tags:
+        - Web
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [user_id, file]
+              properties:
+                user_id:
+                  type: string
+                  description: User ID
+                file:
+                  description: Avatar image, max 10MB
+                  type: string
+                  format: binary
+                  maxLength: 10485760
+      responses:
+        '303':
+          description: Uploaded — redirect to gallery
+          headers:
+            Location:
+              description: '/web/gallery/{user_id}'
+              schema:
+                type: string
+        '400':
+          description: Invalid input — HTML form with error
+          content:
+            text/html:
+              schema:
+                type: string
+        '413':
+          description: File too large — HTML form with error
+          content:
+            text/html:
+              schema:
+                type: string
+        '500':
+          description: Upload failed — HTML form with error
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /web/gallery/{user_id}:
+    get:
+      summary: Avatar gallery
+      description: HTML-галерея аватарок пользователя.
+      tags:
+        - Web
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Gallery page
+          content:
+            text/html:
+              schema:
+                type: string
+
   /api/v1/avatars:
     post:
       summary: Upload avatar. Required, max size 10MB

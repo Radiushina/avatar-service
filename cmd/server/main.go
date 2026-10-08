@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -11,24 +12,25 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	app, cleanup, err := di.InjectApp(ctx)
 	if err != nil {
-		fatal("inject app", err)
+		applogger.LogStartupErr("inject app", err)
+		return fmt.Errorf("inject app: %w", err)
 	}
 	defer cleanup()
 
 	if err := app.Run(ctx); err != nil {
-		applogger.Exit(app.Log, "run app", err)
+		applogger.LogError(app.Log, "run app", err)
+		return fmt.Errorf("run app: %w", err)
 	}
-}
-
-func fatal(msg string, err error) {
-	log, logErr := applogger.New("error")
-	if logErr != nil {
-		os.Exit(1)
-	}
-	applogger.Exit(log, msg, err)
+	return nil
 }

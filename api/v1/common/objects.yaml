@@ -117,3 +117,30 @@ Avatar:
       format: date-time
       example: "2024-01-01T00:00:00Z"
 
+HealthResponse:
+  type: object
+  required: [status, components]
+  properties:
+    status:
+      description: Overall service health
+      type: string
+      enum: [ok, degraded]
+      example: ok
+    components:
+      description: Status of dependent components
+      type: object
+      required: [database, s3, broker]
+      properties:
+        database:
+          type: string
+          enum: [up, down]
+          example: up
+        s3:
+          type: string
+          enum: [up, down]
+          example: up
+        broker:
+          type: string
+          enum: [up, down]
+          example: up
+

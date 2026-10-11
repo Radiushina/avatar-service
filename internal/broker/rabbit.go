@@ -7,8 +7,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Radiushina/avatar-service/internal/telemetry"
 	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
 	"go.uber.org/zap"
 )
 
@@ -99,18 +103,32 @@ func declare(ch *amqp.Channel) error {
 }
 
 func (p *Publisher) Publish(ctx context.Context, exchange, routingKey string, event any) error {
+	ctx, span := otel.Tracer("broker").Start(ctx, "publish "+routingKey)
+	defer span.End()
+
 	body, err := json.Marshal(event)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return fmt.Errorf("encode event: %w", err)
+	}
+	carrier := propagation.MapCarrier{}
+	otel.GetTextMapPropagator().Inject(ctx, carrier)
+	headers := amqp.Table{}
+	for key, value := range carrier {
+		headers[key] = value
 	}
 	err = p.ch.PublishWithContext(ctx, exchange, routingKey, false, false, amqp.Publishing{
 		ContentType:  "application/json",
 		DeliveryMode: amqp.Persistent,
 		MessageId:    messageID(event),
 		Timestamp:    time.Now().UTC(),
+		Headers:      headers,
 		Body:         body,
 	})
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return fmt.Errorf("publish %s: %w", routingKey, err)
 	}
 	return nil
@@ -162,7 +180,14 @@ func (c *Client) Listen(ctx context.Context, queue string, handle func(context.C
 			if !ok {
 				return fmt.Errorf("queue %s closed", queue)
 			}
-			handleErr := handle(ctx, d.Body)
+			msgCtx := otel.GetTextMapPropagator().Extract(ctx, amqpCarrier(d.Headers))
+			msgCtx, span := otel.Tracer("broker").Start(msgCtx, "consume "+queue)
+			handleErr := handle(msgCtx, d.Body)
+			if handleErr != nil {
+				span.RecordError(handleErr)
+				span.SetStatus(codes.Error, handleErr.Error())
+			}
+			span.End()
 			if handleErr != nil && !errors.Is(handleErr, context.Canceled) {
 				c.log.Error("drop rabbitmq message", zap.String("queue", queue), zap.Error(handleErr))
 			}
@@ -171,6 +196,48 @@ func (c *Client) Listen(ctx context.Context, queue string, handle func(context.C
 			}
 		}
 	}
+}
+
+func (c *Client) WatchQueueDepth(stop <-chan struct{}) {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		c.sampleQueueDepth()
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (c *Client) sampleQueueDepth() {
+	if c == nil || c.conn == nil || c.conn.IsClosed() {
+		return
+	}
+	for _, queue := range []string{KeyUploaded, KeyDeleted} {
+		ch, err := c.conn.Channel()
+		if err != nil {
+			return
+		}
+		q, declErr := ch.QueueDeclarePassive(queue, true, false, false, false, nil)
+		closeErr := ch.Close()
+		if declErr != nil || closeErr != nil {
+			continue
+		}
+		telemetry.QueueDepth.WithLabelValues(queue).Set(float64(q.Messages))
+	}
+}
+
+func amqpCarrier(headers amqp.Table) propagation.MapCarrier {
+	carrier := propagation.MapCarrier{}
+	for key, value := range headers {
+		text, ok := value.(string)
+		if ok {
+			carrier[key] = text
+		}
+	}
+	return carrier
 }
 
 func settle(ctx context.Context, d amqp.Delivery, handleErr error) error {

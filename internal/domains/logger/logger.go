@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
@@ -94,13 +95,13 @@ func LoggingMiddleware(log *zap.Logger, next http.Handler) http.Handler {
 		start := time.Now()
 		lw := &loggingResponseWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(lw, r)
-		uri := r.URL.RequestURI()
 		log.Info("HTTP request",
-			zap.String("uri", uri),
+			zap.String("uri", r.URL.RequestURI()),
 			zap.String("method", r.Method),
 			zap.Duration("duration", time.Since(start)),
 			zap.Int("status", lw.status),
 			zap.Int("response_size", lw.bytes),
+			zap.String("trace_id", trace.SpanFromContext(r.Context()).SpanContext().TraceID().String()),
 		)
 	})
 }

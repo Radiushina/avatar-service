@@ -9,6 +9,7 @@ import (
 
 	"github.com/Radiushina/avatar-service/cmd/server/di"
 	applogger "github.com/Radiushina/avatar-service/internal/domains/logger"
+	"github.com/Radiushina/avatar-service/internal/telemetry"
 )
 
 func main() {
@@ -20,6 +21,13 @@ func main() {
 func run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+
+	stopTelemetry, err := telemetry.InitTracerProvider(context.Background())
+	if err != nil {
+		applogger.LogStartupErr("tracer", err)
+		return err
+	}
+	defer stopTelemetry()
 
 	app, cleanup, err := di.InjectApp(ctx)
 	if err != nil {

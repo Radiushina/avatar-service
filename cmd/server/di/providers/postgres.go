@@ -2,10 +2,12 @@ package providers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/Radiushina/avatar-service/internal/config"
+	"github.com/Radiushina/avatar-service/internal/domains/avatars"
 	"github.com/Radiushina/avatar-service/internal/telemetry"
 	"github.com/Radiushina/avatar-service/migrations"
 	"github.com/Radiushina/avatar-service/pkg/pgmigrator"
@@ -38,21 +40,37 @@ func NewPostgres(ctx context.Context, cfg *config.Config, log *zap.Logger) (*pgx
 		return nil, nil, fmt.Errorf("postgres ping: %w", err)
 	}
 
-	go collectRuntimeMetrics(ctx, pool)
+	go collectRuntimeMetrics(ctx, pool, log)
 	return pool, pool.Close, nil
 }
 
-func collectRuntimeMetrics(ctx context.Context, pool *pgxpool.Pool) {
+func collectRuntimeMetrics(ctx context.Context, pool *pgxpool.Pool, log *zap.Logger) {
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	for {
 		sampleRuntimeMetrics(pool)
+		if err := sampleStorage(ctx, pool); err != nil && log != nil && !errors.Is(err, context.Canceled) {
+			log.Warn("storage metric", zap.Error(err))
+		}
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
 		}
 	}
+}
+
+func sampleStorage(ctx context.Context, pool *pgxpool.Pool) error {
+	usage, err := avatars.NewAvatarRepo(pool, nil).StorageByUser(ctx)
+	if err != nil {
+		return fmt.Errorf("storage: %w", err)
+	}
+	totals := make(map[string]float64, len(usage))
+	for userID, bytes := range usage {
+		totals[userID] = float64(bytes)
+	}
+	avatars.SetStorageUsage(totals)
+	return nil
 }
 
 func sampleRuntimeMetrics(pool *pgxpool.Pool) {

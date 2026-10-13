@@ -468,6 +468,42 @@ func decodeThumbKeys(raw []byte) (map[string]string, error) {
 	return keys, nil
 }
 
+func (r *Repo) StorageByUser(ctx context.Context) (map[string]int64, error) {
+	sql, args, err := r.storageByUser().ToSQL()
+	if err != nil {
+		return nil, fmt.Errorf("select storage: %w", err)
+	}
+	rows, err := r.db.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("select storage: %w", err)
+	}
+	defer rows.Close()
+
+	usage := make(map[string]int64)
+	for rows.Next() {
+		var (
+			userID string
+			bytes  int64
+		)
+		if err := rows.Scan(&userID, &bytes); err != nil {
+			return nil, fmt.Errorf("select storage: %w", err)
+		}
+		usage[userID] = bytes
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("select storage: %w", err)
+	}
+	return usage, nil
+}
+
+func (r *Repo) storageByUser() *goqu.SelectDataset {
+	return r.builder.From(avatarsTable).
+		Prepared(true).
+		Select(goqu.C("user_id"), goqu.SUM(goqu.C("size_bytes"))).
+		Where(goqu.C("deleted_at").IsNull()).
+		GroupBy(goqu.C("user_id"))
+}
+
 func (r *Repo) SelectUserAvatars(ctx context.Context, userID string) ([]entity.Avatar, error) {
 	sql, args, err := r.avatarsByUser(userID).ToSQL()
 	if err != nil {

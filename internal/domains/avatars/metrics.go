@@ -30,3 +30,12 @@ var (
 		[]string{"user_id"},
 	)
 )
+
+// SetStorageUsage replaces avatars_storage_bytes with the current totals.
+// ponytail: the server recounts SUM(size_bytes) every 15s. A just-finished upload shows up on the next tick; Add/Sub on the write path would be immediate.
+func SetStorageUsage(usage map[string]float64) {
+	storageUsage.Reset()
+	for userID, bytes := range usage {
+		storageUsage.WithLabelValues(userID).Set(bytes)
+	}
+}

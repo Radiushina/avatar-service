@@ -139,7 +139,6 @@ func (s *Service) Upload(ctx context.Context, in UploadInput) (_ entity.Avatar, 
 	if err != nil {
 		return entity.Avatar{}, fmt.Errorf("upload avatar: %w", err)
 	}
-	storageUsage.WithLabelValues(in.UserID).Add(float64(len(in.Body)))
 	if err := s.publishUploadEvent(ctx, avatar.ID, avatar.UserID, key); err != nil {
 		// upload_published_at stays NULL; the worker relays the event later.
 		s.log.Error("publish upload event", zap.String("avatar_id", avatar.ID), zap.Error(err))

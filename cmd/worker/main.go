@@ -32,6 +32,13 @@ func run() error {
 	}
 	defer stopTelemetry()
 
+	stopLogs, err := telemetry.InitLogProvider(context.Background())
+	if err != nil {
+		applogger.LogStartupErr("logs", err)
+		return fmt.Errorf("logs: %w", err)
+	}
+	defer stopLogs()
+
 	cfg, err := providers.NewConfig()
 	if err != nil {
 		applogger.LogStartupErr("load config", err)

@@ -29,6 +29,13 @@ func run() error {
 	}
 	defer stopTelemetry()
 
+	stopLogs, err := telemetry.InitLogProvider(context.Background())
+	if err != nil {
+		applogger.LogStartupErr("logs", err)
+		return fmt.Errorf("logs: %w", err)
+	}
+	defer stopLogs()
+
 	app, cleanup, err := di.InjectApp(ctx)
 	if err != nil {
 		applogger.LogStartupErr("inject app", err)

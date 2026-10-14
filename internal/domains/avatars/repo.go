@@ -115,11 +115,11 @@ func (r *Repo) SelectByID(ctx context.Context, id string) (entity.AvatarObject, 
 	obj.ID = id
 	// ponytail: thumbnail_s3_keys is {"100x100":"s3-key","300x300":"s3-key"}.
 	// An array of objects needs a new decoder.
-	obj.Thumbnails, err = decodeThumbKeys(thumbs)
+	obj.Thumbnails, err = DecodeThumbKeys(thumbs)
 	if err != nil {
 		return entity.AvatarObject{}, err
 	}
-	obj.ThumbnailETags, err = decodeThumbKeys(etags)
+	obj.ThumbnailETags, err = DecodeThumbKeys(etags)
 	if err != nil {
 		return entity.AvatarObject{}, err
 	}
@@ -148,7 +148,7 @@ func (r *Repo) AvatarByID(id string) *goqu.SelectDataset {
 }
 
 func (r *Repo) GetAvatar(ctx context.Context, id string) (StoredAvatar, error) {
-	query, args, err := r.storedByID(id).ToSQL()
+	query, args, err := r.StoredByID(id).ToSQL()
 	if err != nil {
 		return StoredAvatar{}, fmt.Errorf("select avatar: %w", err)
 	}
@@ -247,7 +247,7 @@ func (r *Repo) SelectAvatarMeta(ctx context.Context, id string) (entity.AvatarMe
 		return entity.AvatarMetadata{}, fmt.Errorf("select avatar meta: %w", err)
 	}
 
-	keys, err := decodeThumbKeys(thumbs)
+	keys, err := DecodeThumbKeys(thumbs)
 	if err != nil {
 		return entity.AvatarMetadata{}, err
 	}
@@ -274,7 +274,7 @@ func (r *Repo) MarkUploadPublished(ctx context.Context, id string) error {
 }
 
 func (r *Repo) ListUploadsToPublish(ctx context.Context) ([]PendingUpload, error) {
-	sql, args, err := r.uploadsToPublish().ToSQL()
+	sql, args, err := r.UploadsToPublish().ToSQL()
 	if err != nil {
 		return nil, fmt.Errorf("list uploads to publish: %w", err)
 	}
@@ -299,7 +299,7 @@ func (r *Repo) ListUploadsToPublish(ctx context.Context) ([]PendingUpload, error
 	return list, nil
 }
 
-func (r *Repo) uploadsToPublish() *goqu.SelectDataset {
+func (r *Repo) UploadsToPublish() *goqu.SelectDataset {
 	return r.builder.From(avatarsTable).
 		Prepared(true).
 		Select("id", "user_id", "s3_key").
@@ -331,7 +331,7 @@ func ThumbnailsFromKeys(keys map[string]string) []entity.Thumbnail {
 }
 
 func (r *Repo) SelectCurrent(ctx context.Context, userID string) (entity.Avatar, error) {
-	sql, args, err := r.avatarsByUser(userID).Limit(1).ToSQL()
+	sql, args, err := r.AvatarsByUser(userID).Limit(1).ToSQL()
 	if err != nil {
 		return entity.Avatar{}, fmt.Errorf("select current avatar: %w", err)
 	}
@@ -415,7 +415,7 @@ func (a StoredAvatar) ObjectKeys() []string {
 	return keys
 }
 
-func (r *Repo) storedByID(id string) *goqu.SelectDataset {
+func (r *Repo) StoredByID(id string) *goqu.SelectDataset {
 	return r.storedColumns().Where(goqu.C("id").Eq(goqu.Cast(goqu.V(id), "uuid")))
 }
 
@@ -450,14 +450,14 @@ func (r *Repo) scanStored(ctx context.Context, query string, args []any) (Stored
 		avatar.ProcessingStatus = *status
 	}
 	avatar.Deleted = deletedAt != nil
-	avatar.Thumbnails, err = decodeThumbKeys(thumbs)
+	avatar.Thumbnails, err = DecodeThumbKeys(thumbs)
 	if err != nil {
 		return StoredAvatar{}, err
 	}
 	return avatar, nil
 }
 
-func decodeThumbKeys(raw []byte) (map[string]string, error) {
+func DecodeThumbKeys(raw []byte) (map[string]string, error) {
 	if len(raw) == 0 {
 		return map[string]string{}, nil
 	}
@@ -469,7 +469,7 @@ func decodeThumbKeys(raw []byte) (map[string]string, error) {
 }
 
 func (r *Repo) StorageByUser(ctx context.Context) (map[string]int64, error) {
-	sql, args, err := r.storageByUser().ToSQL()
+	sql, args, err := r.storageTotals().ToSQL()
 	if err != nil {
 		return nil, fmt.Errorf("select storage: %w", err)
 	}
@@ -496,7 +496,7 @@ func (r *Repo) StorageByUser(ctx context.Context) (map[string]int64, error) {
 	return usage, nil
 }
 
-func (r *Repo) storageByUser() *goqu.SelectDataset {
+func (r *Repo) storageTotals() *goqu.SelectDataset {
 	return r.builder.From(avatarsTable).
 		Prepared(true).
 		Select(goqu.C("user_id"), goqu.SUM(goqu.C("size_bytes"))).
@@ -505,7 +505,7 @@ func (r *Repo) storageByUser() *goqu.SelectDataset {
 }
 
 func (r *Repo) SelectUserAvatars(ctx context.Context, userID string) ([]entity.Avatar, error) {
-	sql, args, err := r.avatarsByUser(userID).ToSQL()
+	sql, args, err := r.AvatarsByUser(userID).ToSQL()
 	if err != nil {
 		return nil, fmt.Errorf("select user avatars: %w", err)
 	}
@@ -530,7 +530,7 @@ func (r *Repo) SelectUserAvatars(ctx context.Context, userID string) ([]entity.A
 	return list, nil
 }
 
-func (r *Repo) avatarsByUser(userID string) *goqu.SelectDataset {
+func (r *Repo) AvatarsByUser(userID string) *goqu.SelectDataset {
 	return r.builder.From(avatarsTable).
 		Prepared(true).
 		Select("id", "user_id", "processing_status", "created_at").

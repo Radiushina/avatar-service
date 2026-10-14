@@ -25,7 +25,7 @@ func run() error {
 	stopTelemetry, err := telemetry.InitTracerProvider(context.Background())
 	if err != nil {
 		applogger.LogStartupErr("tracer", err)
-		return err
+		return fmt.Errorf("tracer: %w", err)
 	}
 	defer stopTelemetry()
 

@@ -86,7 +86,7 @@ func NewDBHealth(pool *pgxpool.Pool, log *zap.Logger) *Postgres {
 
 func (p *Postgres) Ping(ctx context.Context) error {
 	if p == nil || p.client == nil {
-		return fmt.Errorf("database not configured")
+		return errors.New("database not configured")
 	}
 	if err := p.client.Ping(ctx); err != nil {
 		if p.log != nil {

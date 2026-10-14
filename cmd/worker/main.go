@@ -11,6 +11,7 @@ import (
 	"github.com/Radiushina/avatar-service/internal/broker"
 	"github.com/Radiushina/avatar-service/internal/domains/avatars"
 	applogger "github.com/Radiushina/avatar-service/internal/domains/logger"
+	"github.com/Radiushina/avatar-service/internal/telemetry"
 	"github.com/Radiushina/avatar-service/internal/worker"
 )
 
@@ -23,6 +24,20 @@ func main() {
 func run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+
+	stopTelemetry, err := telemetry.InitTracerProvider(context.Background())
+	if err != nil {
+		applogger.LogStartupErr("tracer", err)
+		return fmt.Errorf("tracer: %w", err)
+	}
+	defer stopTelemetry()
+
+	stopLogs, err := telemetry.InitLogProvider(context.Background())
+	if err != nil {
+		applogger.LogStartupErr("logs", err)
+		return fmt.Errorf("logs: %w", err)
+	}
+	defer stopLogs()
 
 	cfg, err := providers.NewConfig()
 	if err != nil {

@@ -51,7 +51,16 @@ services:
       MINIO_ROOT_USER: minio
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       MC_HOST_local: http://minio:${MINIO_ROOT_PASSWORD}@127.0.0.1:9000
-    command: server /data --console-address ":9001"
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        minio server /data --console-address ":9003" &
+        pid=$$!
+        trap 'kill -TERM $$pid' TERM INT
+        until mc alias set local http://127.0.0.1:9000 minio "$$MINIO_ROOT_PASSWORD" && mc mb --ignore-existing local/avatars; do
+          sleep 1
+        done
+        wait $$pid
     ports:
       - "9000:9000" # S3 API
       - "9001:9001" # веб-консоль

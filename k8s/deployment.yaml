@@ -12,9 +12,28 @@ spec:
       labels:
         app: avatar-service
     spec:
+      serviceAccountName: avatar-service
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        # Группа для томов. Сейчас томов нет, поле нужно для PodSecurityPolicy fsGroup.
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: server
           image: avatar-service:latest
+          securityContext:
+            # Процесс не может получить больше прав, чем выдано при старте.
+            allowPrivilegeEscalation: false
+            # Запись в файлы образа запрещена. Логи идут в stdout, шаблоны только читаются.
+            readOnlyRootFilesystem: true
+            # Сбросить CAP_NET_RAW и остальные capabilities.
+            capabilities:
+              drop:
+                - ALL
           ports:
             - containerPort: 8080
           env:

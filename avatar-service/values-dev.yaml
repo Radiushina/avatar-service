@@ -1,0 +1,11 @@
+replicaCount: 1
+
+ingress:
+  hosts:
+    - host: avatars.dev.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+
+autoscaling:
+  enabled: false

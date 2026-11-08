@@ -87,7 +87,20 @@ docker save avatar-service:latest | docker --context rancher-desktop load
 docker --context rancher-desktop tag avatar-service:latest docker.io/library/avatar-service:latest
 ```
 
-Проверка: `docker --context rancher-desktop images avatar-service` показывает теги `latest` и образ `docker.io/library/avatar-service`. Второе имя нужно, потому что Kubernetes запрашивает именно его.
+Команда `tag` ничего не печатает. Дальше проверьте, что в Docker кластера лежит именно эта сборка и что Kubernetes найдёт её по полному имени:
+
+```bash
+docker --context rancher-desktop images avatar-service
+docker image inspect avatar-service:latest --format 'created={{.Created}}'
+docker --context rancher-desktop image inspect avatar-service:latest --format 'created={{.Created}} id={{.Id}}'
+docker --context rancher-desktop image inspect docker.io/library/avatar-service:latest --format 'id={{.Id}}'
+```
+
+Первая команда смотрит список образов в `rancher-desktop`. В нём одна строка `avatar-service:latest`. Второй строки нет: для этого Docker короткое имя уже значит `docker.io/library/avatar-service:latest`.
+
+Вторая команда берёт время сборки в OrbStack, третья — время того же тега в `rancher-desktop`. Значения `created` совпадают: в кластер попал только что собранный образ, а не старый, который уже лежал в виртуальной машине. Поля `id` у двух Docker разные, их не сравнивают.
+
+Четвёртая команда открывает полное имя, которое запрашивает Kubernetes. Её `id` совпадает с `id` из третьей команды. Под возьмёт загруженный образ и не пойдёт за ним на Docker Hub.
 
 ### 5. Положить адрес базы в секрет
 
@@ -160,6 +173,20 @@ S3 и RabbitMQ чарт не ставит и переменные для них 
 
 Снаружи сайт откроется по хосту из values, когда DNS или `/etc/hosts` указывает на ingress-контроллер.
 
+## Снять деплой
+
+Эти команды убирают релиз из кластера, чтобы шаги 1–7 можно было пройти заново. Порядок такой: сначала Helm, пока namespace ещё есть.
+
+```bash
+helm uninstall avatar-service -n avatars
+kubectl delete namespace avatars
+kubectl config set-context --current --namespace=default
+kubectl label namespace kube-system name-
+docker compose stop postgres
+```
+
+После этого контекст снова `default`, namespace `avatars` нет, метки `name=ingress-nginx` на `kube-system` нет. Postgres из пятого шага остановлен. Образ в Docker Rancher Desktop эти команды не удаляют.
+
 ## Остановка
 
 Kubernetes и `docker compose stop` посылают процессу SIGTERM. То же делает Ctrl+C локально.
@@ -176,18 +203,14 @@ flowchart LR
   ingress[Ingress]
   svc[Service]
   server[Deployment server]
-  hpa[HPA]
   worker[Worker]
   secret[Secret avatar-secrets]
   migrate[Job миграции]
   pg[(PostgreSQL)]
   s3[(S3)]
   mq[RabbitMQ]
-  sm[ServiceMonitor]
-  prom[Prometheus]
 
   client --> ingress --> svc --> server
-  hpa --- server
   secret --> server
   secret --> migrate
   migrate --> pg
@@ -197,8 +220,10 @@ flowchart LR
   mq --> worker
   worker --> pg
   worker --> s3
-  sm --> svc
-  prom --> sm
 ```
 
-В кластере из чарта поднимаются Ingress, Service, Deployment сервера, HPA, ServiceAccount, NetworkPolicy, ServiceMonitor, PodSecurityPolicy с RBAC и Job миграции. PostgreSQL ожидается в отдельном namespace. Воркер, S3 и RabbitMQ в чарт не входят: локально их поднимает `docker compose`. ServiceMonitor указывает Prometheus на порт `metrics` сервиса.
+Чарт создаёт Ingress, Service, Deployment сервера, ServiceAccount и NetworkPolicy. Job миграции запускается до подов и после успеха удаляется. HPA появляется только при `autoscaling.enabled: true`; в `values-dev.yaml` автомасштабирование выключено. ServiceMonitor выключен: `serviceMonitor.enabled: false`, CRD Prometheus Operator в кластере нет. PodSecurityPolicy на Kubernetes 1.25 и новее не ставится. RBAC для неё в чарте остаётся.
+
+PostgreSQL, S3, RabbitMQ и воркер чарт не поднимает. В этом деплое их запускает `docker compose`. Postgres снаружи кластера виден как `host.rancher-desktop.internal`. NetworkPolicy пускает исходящий трафик только в namespace с меткой `name=database`. Такого namespace здесь нет.
+
+Стрелки от сервера к PostgreSQL, S3 и RabbitMQ есть в коде. Текущий под до них не доходит: процесс завершается, пока Deployment не передаёт `DATABASE_DSN` и переменные S3 и RabbitMQ. Локальный Prometheus из compose читает метрики напрямую с `server:8080`, не через ServiceMonitor.

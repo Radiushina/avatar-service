@@ -44,18 +44,18 @@ func NewPostgres(ctx context.Context, cfg *config.Config, log *zap.Logger) (*pgx
 }
 
 // ponytail: tests swap collectSample so the loop can be parked without postgres.
-var collectSample = func(ctx context.Context, pool *pgxpool.Pool) error {
+var collectSample = func(ctx context.Context, pool *pgxpool.Pool, repo *avatars.Repo) error {
 	sampleRuntimeMetrics(pool)
-	return sampleStorage(ctx, pool)
+	return sampleStorage(ctx, repo)
 }
 
 // CollectRuntimeMetrics samples pool and storage metrics until ctx is canceled.
 // The caller must wait for it to return before closing the pool.
-func CollectRuntimeMetrics(ctx context.Context, pool *pgxpool.Pool, log *zap.Logger) {
+func CollectRuntimeMetrics(ctx context.Context, pool *pgxpool.Pool, repo *avatars.Repo, log *zap.Logger) {
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	for {
-		if err := collectSample(ctx, pool); err != nil && log != nil && !errors.Is(err, context.Canceled) {
+		if err := collectSample(ctx, pool, repo); err != nil && log != nil && !errors.Is(err, context.Canceled) {
 			log.Warn("storage metric", zap.Error(err))
 		}
 		select {
@@ -66,8 +66,8 @@ func CollectRuntimeMetrics(ctx context.Context, pool *pgxpool.Pool, log *zap.Log
 	}
 }
 
-func sampleStorage(ctx context.Context, pool *pgxpool.Pool) error {
-	usage, err := avatars.NewAvatarRepo(pool, nil).StorageByUser(ctx)
+func sampleStorage(ctx context.Context, repo *avatars.Repo) error {
+	usage, err := repo.StorageByUser(ctx)
 	if err != nil {
 		return fmt.Errorf("storage: %w", err)
 	}

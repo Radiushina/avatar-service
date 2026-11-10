@@ -73,11 +73,12 @@ func run() error {
 	}
 
 	store := providers.NewS3Store(cfg)
-	w := worker.New(avatars.NewAvatarRepo(pool, store), store, worker.NewResizer(), client, publisher, log)
+	repo := avatars.NewAvatarRepo(pool, store)
+	w := worker.New(repo, store, worker.NewResizer(), client, publisher, log)
 
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		providers.CollectRuntimeMetrics(ctx, pool, log)
+		providers.CollectRuntimeMetrics(ctx, pool, repo, log)
 		return nil
 	})
 	g.Go(func() error {

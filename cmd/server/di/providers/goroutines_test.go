@@ -8,6 +8,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/Radiushina/avatar-service/internal/domains/avatars"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 )
@@ -16,10 +17,10 @@ func TestCollectRuntimeMetricsExits(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		prev := collectSample
 		t.Cleanup(func() { collectSample = prev })
-		collectSample = func(context.Context, *pgxpool.Pool) error { return nil }
+		collectSample = func(context.Context, *pgxpool.Pool, *avatars.Repo) error { return nil }
 
 		ctx, cancel := context.WithCancel(context.Background())
-		go CollectRuntimeMetrics(ctx, nil, nil)
+		go CollectRuntimeMetrics(ctx, nil, nil, nil)
 		synctest.Wait()
 		cancel()
 	})

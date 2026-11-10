@@ -24,7 +24,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: server
-          image: avatar-service:latest
+          image: avatar-service:0.1.0
           securityContext:
             # Процесс не может получить больше прав, чем выдано при старте.
             allowPrivilegeEscalation: false

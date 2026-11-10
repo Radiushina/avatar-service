@@ -5,7 +5,8 @@ replicaCount: 3
 image:
   repository: avatar-service
   pullPolicy: IfNotPresent
-  tag: "latest"
+  # Пустой тег: Deployment подставит .Chart.AppVersion.
+  tag: ""
 
 # Service Account без токена Kubernetes API
 serviceAccount:

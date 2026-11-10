@@ -1,5 +1,8 @@
 replicaCount: 3
 
+image:
+  tag: "0.1.0"
+
 ingress:
   hosts:
     - host: avatars.example.com

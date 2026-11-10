@@ -40,16 +40,22 @@ func NewPostgres(ctx context.Context, cfg *config.Config, log *zap.Logger) (*pgx
 		return nil, nil, fmt.Errorf("postgres ping: %w", err)
 	}
 
-	go collectRuntimeMetrics(ctx, pool, log)
 	return pool, pool.Close, nil
 }
 
-func collectRuntimeMetrics(ctx context.Context, pool *pgxpool.Pool, log *zap.Logger) {
+// ponytail: tests swap collectSample so the loop can be parked without postgres.
+var collectSample = func(ctx context.Context, pool *pgxpool.Pool) error {
+	sampleRuntimeMetrics(pool)
+	return sampleStorage(ctx, pool)
+}
+
+// CollectRuntimeMetrics samples pool and storage metrics until ctx is canceled.
+// The caller must wait for it to return before closing the pool.
+func CollectRuntimeMetrics(ctx context.Context, pool *pgxpool.Pool, log *zap.Logger) {
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	for {
-		sampleRuntimeMetrics(pool)
-		if err := sampleStorage(ctx, pool); err != nil && log != nil && !errors.Is(err, context.Canceled) {
+		if err := collectSample(ctx, pool); err != nil && log != nil && !errors.Is(err, context.Canceled) {
 			log.Warn("storage metric", zap.Error(err))
 		}
 		select {

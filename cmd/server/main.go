@@ -10,6 +10,7 @@ import (
 	"github.com/Radiushina/avatar-service/cmd/server/di"
 	applogger "github.com/Radiushina/avatar-service/internal/domains/logger"
 	"github.com/Radiushina/avatar-service/internal/telemetry"
+	"golang.org/x/sync/errgroup"
 )
 
 func main() {
@@ -43,7 +44,15 @@ func run() error {
 	}
 	defer cleanup()
 
-	if err := app.Run(ctx); err != nil {
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		app.CollectRuntimeMetrics(ctx)
+		return nil
+	})
+	g.Go(func() error {
+		return app.Run(ctx)
+	})
+	if err := g.Wait(); err != nil {
 		applogger.LogError(app.Log, "run app", err)
 		return fmt.Errorf("run app: %w", err)
 	}

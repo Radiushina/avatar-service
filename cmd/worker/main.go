@@ -13,6 +13,7 @@ import (
 	applogger "github.com/Radiushina/avatar-service/internal/domains/logger"
 	"github.com/Radiushina/avatar-service/internal/telemetry"
 	"github.com/Radiushina/avatar-service/internal/worker"
+	"golang.org/x/sync/errgroup"
 )
 
 func main() {
@@ -73,7 +74,16 @@ func run() error {
 
 	store := providers.NewS3Store(cfg)
 	w := worker.New(avatars.NewAvatarRepo(pool, store), store, worker.NewResizer(), client, publisher, log)
-	if err := w.Run(ctx); err != nil {
+
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		providers.CollectRuntimeMetrics(ctx, pool, log)
+		return nil
+	})
+	g.Go(func() error {
+		return w.Run(ctx)
+	})
+	if err := g.Wait(); err != nil {
 		applogger.LogError(log, "run worker", err)
 		return fmt.Errorf("run worker: %w", err)
 	}

@@ -1,11 +1,12 @@
 replicaCount: 1
 
+config:
+  s3:
+    endpoint: http://host.rancher-desktop.internal:9000
+
 ingress:
   hosts:
     - host: avatars.dev.example.com
       paths:
         - path: /
           pathType: Prefix
-
-autoscaling:
-  enabled: false

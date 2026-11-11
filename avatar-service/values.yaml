@@ -8,6 +8,13 @@ image:
   # Пустой тег: Deployment подставит .Chart.AppVersion.
   tag: ""
 
+# Несекретные настройки S3. Ключи доступа и RABBITMQ_URL лежат в Secret avatar-secrets.
+config:
+  s3:
+    endpoint: ""
+    region: us-east-1
+    bucket: avatars
+
 # Service Account без токена Kubernetes API
 serviceAccount:
   create: true
@@ -40,9 +47,9 @@ service:
   targetPort: 8080
   portName: metrics
 
-# CRD monitoring.coreos.com в кластере нет, объект без него не ставится.
+# CRD лежит в crds/ и ставится вместе с чартом.
 serviceMonitor:
-  enabled: false
+  enabled: true
 
 # Ingress
 ingress:

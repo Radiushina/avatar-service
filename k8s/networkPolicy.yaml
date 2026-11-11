@@ -19,5 +19,32 @@ spec:
         - namespaceSelector:
             matchLabels:
               name: database
-
-  
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: s3
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: rabbitmq
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: TCP
+          port: 53
+        - protocol: UDP
+          port: 53
+    # ponytail: Postgres, MinIO and RabbitMQ for this deploy run on the host, not in a namespace.
+    # Drop the ipBlock once those services run in the labeled namespaces above.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 5672
+        - protocol: TCP
+          port: 9000

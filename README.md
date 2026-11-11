@@ -54,7 +54,7 @@ make test-goroutines
 
 Чарт лежит в `avatar-service/`. Ниже порядок, в котором его ставят в кластер. Локальный `docker compose` останавливать не нужно: он занимает порты на вашей машине, чарт поднимает поды внутри кластера.
 
-Заранее нужны `kubectl`, `helm` и кластер Rancher Desktop, контекст `rancher-desktop`. PostgreSQL чарт не поднимает, и в этом кластере базы нет. Вход снаружи уже делает Traefik в namespace `kube-system`.
+Заранее нужны `kubectl`, `helm` и кластер Rancher Desktop, контекст `rancher-desktop`. Вход снаружи делает Traefik в namespace `kube-system`. Postgres, MinIO и RabbitMQ поднимает шаг 5.
 
 ### 1. Проверить кластер
 
@@ -65,7 +65,7 @@ kubectl get nodes
 
 Первая команда печатает имя текущего кластера. Вторая должна показать ноды в статусе `Ready`. Если контекст не тот: `kubectl config use-context ИМЯ`.
 
-### 2. Создать namespace
+### 2. Создать namespace и переключить на него текущий контекст
 
 Namespace — отдельное место в кластере для этого сервиса. Дальше команды идут в `avatars`:
 
@@ -76,7 +76,7 @@ kubectl config set-context --current --namespace=avatars
 
 ### 3. Пометить namespace ingress
 
-Чарт ставит NetworkPolicy. Она смотрит на метку namespace, а не на его имя. Входящий трафик пускает только оттуда, где стоит метка `name=ingress-nginx`. Исходящий — только туда, где стоит метка `name=database`.
+Чарт ставит NetworkPolicy. Она смотрит на метку namespace, а не на его имя. Входящий трафик пускает только оттуда, где стоит метка `name=ingress-nginx`.
 
 В этом кластере Traefik работает в `kube-system`. Метку ставят на него:
 
@@ -87,70 +87,89 @@ kubectl get namespace kube-system --show-labels
 
 В списке меток должна быть `name=ingress-nginx`.
 
-Метку `name=database` на этом шаге не ставят: PostgreSQL в кластере нет, отдельного namespace для базы тоже. Её ставят позже на тот namespace, где база будет запущена. Локальный Postgres из `docker compose` сюда не относится.
+Исходящий трафик пускает в namespace с метками `name=database`, `name=s3` и `name=rabbitmq`. DNS идёт в `kube-system` на порт 53 по TCP и UDP. Селектор DNS — `kubernetes.io/metadata.name=kube-system`: эту метку Kubernetes ставит сам. Метку `name` на `kube-system` ради DNS не меняют, она уже равна `ingress-nginx`.
+
+Postgres, MinIO и RabbitMQ в этом деплое запускает `docker compose` на хосте, отдельных namespace для них нет. Политика дополнительно открывает наружу TCP-порты 5432, 5672 и 9000. Метки `name=database`, `name=s3` и `name=rabbitmq` на этом шаге не ставят.
 
 ### 4. Собрать образ
 
 Из корня репозитория:
 
 ```bash
-docker build -t avatar-service:latest .
+docker build -t avatar-service:0.1.0 .
 ```
 
-Чарт берёт образ `avatar-service:latest` и не скачивает его из интернета (`image.pullPolicy: IfNotPresent`). `docker build` собирает образ в текущем контексте Docker, сейчас это OrbStack. Кластер читает другой контекст, `rancher-desktop`. Без `--context rancher-desktop` загрузка попадает обратно в OrbStack, и под образ не видит.
+Чарт берёт образ `avatar-service:0.1.0` (`image.pullPolicy: IfNotPresent`). В `values.yaml` поле `image.tag` пустое, поэтому Deployment подставляет `appVersion` из `Chart.yaml`, сейчас это `0.1.0`. `docker build` собирает образ в OrbStack. Кластер читает контекст `rancher-desktop`, поэтому образ загружают туда.
 
 ```bash
-docker save avatar-service:latest | docker --context rancher-desktop load
-docker --context rancher-desktop tag avatar-service:latest docker.io/library/avatar-service:latest
+docker save avatar-service:0.1.0 | docker --context rancher-desktop load
+docker --context rancher-desktop tag avatar-service:0.1.0 docker.io/library/avatar-service:0.1.0
 ```
 
 Команда `tag` ничего не печатает. Дальше проверьте, что в Docker кластера лежит именно эта сборка и что Kubernetes найдёт её по полному имени:
 
 ```bash
 docker --context rancher-desktop images avatar-service
-docker image inspect avatar-service:latest --format 'created={{.Created}}'
-docker --context rancher-desktop image inspect avatar-service:latest --format 'created={{.Created}} id={{.Id}}'
-docker --context rancher-desktop image inspect docker.io/library/avatar-service:latest --format 'id={{.Id}}'
+docker image inspect avatar-service:0.1.0 --format 'created={{.Created}}'
+docker --context rancher-desktop image inspect avatar-service:0.1.0 --format 'created={{.Created}} id={{.Id}}'
+docker --context rancher-desktop image inspect docker.io/library/avatar-service:0.1.0 --format 'id={{.Id}}'
 ```
 
-Первая команда смотрит список образов в `rancher-desktop`. В нём одна строка `avatar-service:latest`. Второй строки нет: для этого Docker короткое имя уже значит `docker.io/library/avatar-service:latest`.
+Первая команда смотрит список образов в `rancher-desktop`. В нём одна строка `avatar-service:0.1.0`. Второй строки нет: для этого Docker короткое имя уже значит `docker.io/library/avatar-service:0.1.0`.
 
-Вторая команда берёт время сборки в OrbStack, третья — время того же тега в `rancher-desktop`. Значения `created` совпадают: в кластер попал только что собранный образ, а не старый, который уже лежал в виртуальной машине. Поля `id` у двух Docker разные, их не сравнивают.
+Вторая команда берёт время сборки в OrbStack, третья — время того же тега в `rancher-desktop`. Значения `created` совпадают: в кластер попал только что собранный образ. Поля `id` у двух Docker разные, их не сравнивают.
 
 Четвёртая команда открывает полное имя, которое запрашивает Kubernetes. Её `id` совпадает с `id` из третьей команды. Под возьмёт загруженный образ и не пойдёт за ним на Docker Hub.
 
-### 5. Положить адрес базы в секрет
+### 5. Поднять зависимости и положить адреса в секрет
 
-База для этого деплоя — Postgres из `docker compose`. В кластере её нет. Поднимите только этот контейнер:
+Postgres, MinIO и RabbitMQ для этого деплоя запускает `docker compose`. Из виртуальной машины Rancher Desktop Mac виден как `host.rancher-desktop.internal`. Пароли берутся из `.env` в корне репозитория. Если файла ещё нет: `cp .env.example .env`.
 
 ```bash
-docker compose up -d postgres
+docker compose up -d --wait postgres minio rabbitmq
 ```
 
-Секрет хранит строку подключения. Его читают job миграции и Deployment, ключ называется `database-url`. Из виртуальной машины Rancher Desktop Mac виден как `host.rancher-desktop.internal`. Пользователь базы `developer`, имя базы `avatars`, пароль берётся из `POSTGRES_PASSWORD` в `.env`.
+Секрет читают job миграции и Deployment. В нём четыре ключа. Адрес MinIO, регион и имя бакета в секрет не входят: они заданы в `values-dev.yaml`. Пользователь базы `developer`, имя базы `avatars`.
+
+| Ключ | Откуда | Куда попадает |
+|---|---|---|
+| `database-url` | строка Postgres | сервер читает её как `DATABASE_DSN`, job миграции — как `DATABASE_URL` |
+| `s3-access-key` | пользователь MinIO, `minio` | `S3_ACCESS_KEY` |
+| `s3-secret-key` | `MINIO_ROOT_PASSWORD` из `.env` | `S3_SECRET_KEY` |
+| `rabbitmq-url` | адрес RabbitMQ с логином и паролем из `.env` | `RABBITMQ_URL` |
 
 ```bash
 kubectl create secret generic avatar-secrets \
-  --from-literal=database-url="postgres://developer:$(grep '^POSTGRES_PASSWORD=' .env | cut -d= -f2-)@host.rancher-desktop.internal:5432/avatars?sslmode=disable"
+  --from-literal=database-url="postgres://developer:$(grep '^POSTGRES_PASSWORD=' .env | cut -d= -f2-)@host.rancher-desktop.internal:5432/avatars?sslmode=disable" \
+  --from-literal=s3-access-key=minio \
+  --from-literal=s3-secret-key="$(grep '^MINIO_ROOT_PASSWORD=' .env | cut -d= -f2-)" \
+  --from-literal=rabbitmq-url="amqp://$(grep '^RABBITMQ_USER=' .env | cut -d= -f2-):$(grep '^RABBITMQ_PASSWORD=' .env | cut -d= -f2-)@host.rancher-desktop.internal:5672/"
 ```
 
-Секрет попадает в текущий namespace, то есть в `avatars`. Проверка: `kubectl get secret avatar-secrets`.
+Секрет попадает в текущий namespace, то есть в `avatars`.
+
+```bash
+kubectl get secret avatar-secrets
+```
+
+В колонке `DATA` должно быть `4`: `database-url`, `s3-access-key`, `s3-secret-key`, `rabbitmq-url`.
 
 ### 6. Установить чарт
 
-На этом шаге выполняются три команды ниже, по порядку, и больше ничего. Файл `values-prod.yaml` в них не входит.
+На этом шаге выполняются четыре команды ниже, по порядку. Файл `values-prod.yaml` в них не входит.
 
-Кластер здесь версии 1.37. В чарте есть шаблон PodSecurityPolicy, а с Kubernetes 1.25 такого ресурса нет, поэтому `helm` с этим файлом падает. Ограничения уже записаны в `securityContext` деплоймента. Первая команда убирает шаблон на время установки, третья кладёт его обратно в репозиторий. На уже поставленный релиз третья команда не влияет.
+Кластер версии 1.37. Ограничения пода задаёт `securityContext`: процесс идёт от пользователя 65534, без лишних capabilities. Шаблон PodSecurityPolicy на время установки убирают из каталога шаблонов и возвращают после Helm.
 
-Вторая команда ставит dev: одна реплика, без автомасштабирования, хост `avatars.dev.example.com`. Перед подами Helm сам запускает job `avatar-service-migrate` и накатывает SQL из `avatar-service/migrations/`. ServiceMonitor в этом деплое выключен: в кластере нет CRD `monitoring.coreos.com`, отдельной команды для него нет.
+Первая команда ставит CRD ServiceMonitor. Дальше Helm ставит dev. HPA держит от 2 до 10 реплик и целится в 70% CPU и 80% памяти. Хост Ingress — `avatars.dev.example.com`. Перед подами Helm запускает job `avatar-service-migrate` и накатывает SQL из `avatar-service/migrations/`.
 
 ```bash
+kubectl apply -f avatar-service/crds/servicemonitor.yaml
 mv avatar-service/templates/podsecuritypolicy.yaml /tmp/podsecuritypolicy.yaml
 helm upgrade --install avatar-service ./avatar-service -f avatar-service/values-dev.yaml
 mv /tmp/podsecuritypolicy.yaml avatar-service/templates/podsecuritypolicy.yaml
 ```
 
-Дождитесь окончания второй команды. В конце её вывода должно быть `STATUS: deployed`.
+Дождитесь окончания третьей команды. В конце её вывода должно быть `STATUS: deployed`.
 
 Сразу после этого проверьте, что релиз создал ресурсы и чем закончились миграция и под:
 
@@ -162,47 +181,56 @@ kubectl logs -l app=avatar-service --tail=20
 
 Service `avatar-service` и Ingress `avatar-service` с хостом `avatars.dev.example.com` должны быть в списке. В событиях у job `avatar-service-migrate` есть `Job completed`. Самого job в `kubectl get jobs` уже нет: после успеха Helm его удаляет.
 
-Под сервера при этом не `Ready`. В логе строка `configuration validation: database.dsn is required`, статус пода `CrashLoopBackOff`. Процесс читает `DATABASE_DSN`, а чарт передаёт только `DATABASE_URL`. На шаге 7 под таким остаётся.
+Под сервера в статусе `Running`. HPA поднимает вторую реплику, у каждой `READY` `1/1`. В логе есть `starting HTTP server`. Чарт передаёт серверу `DATABASE_DSN` из ключа `database-url`. В job миграции переменная называется `DATABASE_URL`. `S3_ENDPOINT`, `S3_REGION` и `S3_BUCKET` приходят из values (для dev это `http://host.rancher-desktop.internal:9000`, `us-east-1`, `avatars`). ConfigMap `avatar-config` хранит `max_file_size`, `allowed_mime_types` и `s3_bucket`. `S3_ACCESS_KEY`, `S3_SECRET_KEY` и `RABBITMQ_URL` приходят из секрета. `S3_PATH_STYLE` не задаётся: у процесса значение по умолчанию `true`, его ждёт MinIO.
 
 ### 7. Проверить, что поднялось
 
 ```bash
-kubectl get pods,svc,ingress
+kubectl get pods,svc,ingress,hpa,servicemonitor,configmap
 ```
 
 Так и должно быть:
 
-- под `avatar-service-...` в статусе `CrashLoopBackOff`, колонка `READY` — `0/1`;
+- два пода `avatar-service-...` в статусе `Running`, колонка `READY` — `1/1`;
 - Service `avatar-service`, тип `ClusterIP`, порт `80`;
-- Ingress `avatar-service`, класс `traefik`, хост `avatars.dev.example.com`.
+- Ingress `avatar-service`, класс `traefik`, хост `avatars.dev.example.com`;
+- HPA `avatar-service`, минимум 2 реплики, максимум 10, цели 70% CPU и 80% памяти;
+- ServiceMonitor `avatar-service`, порт `metrics`, интервал 30s;
+- ConfigMap `avatar-config` с ключами `max_file_size`, `allowed_mime_types`, `s3_bucket`.
 
-Job `avatar-service-migrate` в списке нет. `kubectl logs job/avatar-service-migrate` отвечает `NotFound`: миграция прошла, и Helm удалил job. Это не ошибка шага.
+Job `avatar-service-migrate` в списке нет: миграция прошла, и Helm удалил job.
 
-`/health` по этому адресу не открывается. Процесс в поде падает на строке `database.dsn is required` из шага 6.
+Проверка с хоста. Traefik слушает localhost, хост берётся из values:
 
-### Чего чарт не делает
+```bash
+curl -fsS --resolve avatars.dev.example.com:80:127.0.0.1 http://avatars.dev.example.com/health
+```
 
-Сервер читает `DATABASE_DSN`, а в Deployment записана `DATABASE_URL`. Миграция с `DATABASE_URL` проходит, процесс к базе не подключается. В `avatar-service/templates/deployment.yaml` у контейнера сервера переменная должна называться `DATABASE_DSN`. В job миграции оставьте `DATABASE_URL`: программа `migrate` ждёт именно её.
+Ответ со статусом HTTP 200. В JSON поле `status` равно `ok`, компоненты `database`, `s3` и `broker` равны `up`.
 
-S3 и RabbitMQ чарт не ставит и переменные для них не передаёт. Загрузка и миниатюры без них не работают. В контейнер нужны те же переменные, что в `docker-compose.yml`: `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_PATH_STYLE`, `RABBITMQ_URL`. Воркер очереди в чарт тоже не входит. Локально его поднимает `docker compose`.
+### Зависимости рядом с чартом
 
-Исходящая NetworkPolicy сервера пускает трафик только в namespace базы. С переменными поды всё равно не дойдут до S3, RabbitMQ и до DNS в `kube-system`. В политику нужно добавить эти namespace и порт 53.
+PostgreSQL, MinIO и RabbitMQ поднимает `docker compose` на шаге 5. Из подов они видны как `host.rancher-desktop.internal`. Воркер миниатюр тоже запускает compose:
 
-Снаружи сайт откроется по хосту из values, когда DNS или `/etc/hosts` указывает на ingress-контроллер.
+```bash
+docker compose up -d worker
+```
+
+Снаружи сайт открывается по хосту из values, когда DNS или `/etc/hosts` указывает на ingress-контроллер.
 
 ## Снять деплой
 
-Эти команды убирают релиз из кластера, чтобы шаги 1–7 можно было пройти заново. Порядок такой: сначала Helm, пока namespace ещё есть.
+Эти команды убирают релиз из кластера. Сначала Helm, пока namespace ещё есть.
 
 ```bash
 helm uninstall avatar-service -n avatars
 kubectl delete namespace avatars
 kubectl config set-context --current --namespace=default
 kubectl label namespace kube-system name-
-docker compose stop postgres
+docker compose stop postgres minio rabbitmq
 ```
 
-После этого контекст снова `default`, namespace `avatars` нет, метки `name=ingress-nginx` на `kube-system` нет. Postgres из пятого шага остановлен. Образ в Docker Rancher Desktop эти команды не удаляют.
+После этого контекст `default`, namespace `avatars` нет, метки `name=ingress-nginx` на `kube-system` нет. Postgres, MinIO и RabbitMQ остановлены. Образ в Docker Rancher Desktop эти команды не удаляют.
 
 ## Остановка
 
@@ -220,6 +248,11 @@ flowchart LR
   ingress[Ingress]
   svc[Service]
   server[Deployment server]
+  hpa[HPA]
+  sm[ServiceMonitor]
+  np[NetworkPolicy]
+  sa[ServiceAccount]
+  cm[ConfigMap]
   worker[Worker]
   secret[Secret avatar-secrets]
   migrate[Job миграции]
@@ -228,6 +261,11 @@ flowchart LR
   mq[RabbitMQ]
 
   client --> ingress --> svc --> server
+  hpa --> server
+  sm --> svc
+  np --> server
+  sa --> server
+  cm --> server
   secret --> server
   secret --> migrate
   migrate --> pg
@@ -239,8 +277,8 @@ flowchart LR
   worker --> s3
 ```
 
-Чарт создаёт Ingress, Service, Deployment сервера, ServiceAccount и NetworkPolicy. Job миграции запускается до подов и после успеха удаляется. HPA появляется только при `autoscaling.enabled: true`; в `values-dev.yaml` автомасштабирование выключено. ServiceMonitor выключен: `serviceMonitor.enabled: false`, CRD Prometheus Operator в кластере нет. PodSecurityPolicy на Kubernetes 1.25 и новее не ставится. RBAC для неё в чарте остаётся.
+Чарт создаёт Ingress, Service, Deployment сервера, ServiceAccount, ConfigMap, NetworkPolicy, HPA и ServiceMonitor. Job миграции запускается до подов и после успеха удаляется. HPA в dev и prod включён: от 2 до 10 реплик, 70% CPU и 80% памяти. ServiceMonitor выбирает Service по метке приложения и читает порт `metrics` раз в 30 секунд. Под работает от пользователя 65534, ServiceAccount без токена API, права задаёт RBAC.
 
-PostgreSQL, S3, RabbitMQ и воркер чарт не поднимает. В этом деплое их запускает `docker compose`. Postgres снаружи кластера виден как `host.rancher-desktop.internal`. NetworkPolicy пускает исходящий трафик только в namespace с меткой `name=database`. Такого namespace здесь нет.
+Postgres, MinIO, RabbitMQ и воркер запускает `docker compose`. Из подов они видны как `host.rancher-desktop.internal`. NetworkPolicy пускает исходящий трафик в namespace с метками `name=database`, `name=s3` и `name=rabbitmq`, DNS в `kube-system` на порт 53 и TCP-порты 5432, 5672, 9000 на адреса вне кластера.
 
-Стрелки от сервера к PostgreSQL, S3 и RabbitMQ есть в коде. Текущий под до них не доходит: процесс завершается, пока Deployment не передаёт `DATABASE_DSN` и переменные S3 и RabbitMQ. Локальный Prometheus из compose читает метрики напрямую с `server:8080`, не через ServiceMonitor.
+Локальный Prometheus из compose читает метрики с `server:8080`. В кластере тот же эндпоинт отдаёт Service на порту `metrics`, его описывает ServiceMonitor.

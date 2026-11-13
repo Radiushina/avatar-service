@@ -86,7 +86,7 @@ func (w *Worker) Run(ctx context.Context) error {
 		})
 	}
 	if err := g.Wait(); err != nil && !errors.Is(err, context.Canceled) {
-		return err
+		return fmt.Errorf("wait worker: %w", err)
 	}
 	return nil
 }

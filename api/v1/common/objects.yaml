@@ -110,7 +110,8 @@ Avatar:
     status:
       description: 'Processing status'
       type: string
-      example: ready
+      enum: [processing, completed]
+      example: completed
     created_at:
       description: 'Creation date'
       type: string

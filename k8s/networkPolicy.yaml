@@ -1,0 +1,54 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: avatar-service-netpol
+spec:
+  podSelector:
+    matchLabels:
+      app: avatar-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: database
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: s3
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: rabbitmq
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: TCP
+          port: 53
+        - protocol: UDP
+          port: 53
+    # ponytail: Postgres, MinIO and RabbitMQ for this deploy run on the host, not in a namespace.
+    # Drop the ipBlock once those services run in the labeled namespaces above.
+    - to:
+        - ipBlock:
+            # host.rancher-desktop.internal, the Lima gateway on the Mac.
+            # If dependencies run on the cluster VM host rather than in separate namespaces, the egress rule needs the host's specific CIDR, not the whole address range.
+            # Look up the gateway IP: rdctl shell -- grep host.lima.internal /etc/hosts
+            # /32 means this single address.
+            cidr: 192.168.5.2/32
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 5672
+        - protocol: TCP
+          port: 9000

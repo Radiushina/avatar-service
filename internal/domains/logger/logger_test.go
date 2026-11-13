@@ -1,13 +1,16 @@
 package logger_test
 
 import (
+	"context"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/Radiushina/avatar-service/internal/domains/logger"
 	"github.com/stretchr/testify/require"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 )
@@ -82,3 +85,49 @@ func TestLoggingMiddleware(t *testing.T) {
 		})
 	}
 }
+
+func TestNewSlogLevel(t *testing.T) {
+	t.Parallel()
+
+	sl, err := logger.NewSlog("error")
+	require.NoError(t, err)
+	require.False(t, sl.Enabled(context.Background(), slog.LevelInfo))
+	require.True(t, sl.Enabled(context.Background(), slog.LevelError))
+}
+
+func TestAttachExportDropsVerboseLogs(t *testing.T) {
+	t.Parallel()
+
+	exp := &captureExp{}
+	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(sdklog.NewSimpleProcessor(exp)))
+	t.Cleanup(func() {
+		require.NoError(t, provider.Shutdown(context.Background()))
+	})
+
+	zl, err := logger.New("error")
+	require.NoError(t, err)
+	sl, err := logger.NewSlog("error")
+	require.NoError(t, err)
+	zl, sl, err = logger.AttachExport("error", zl, sl, provider)
+	require.NoError(t, err)
+
+	sl.Info("skip-info")
+	zl.Info("skip-zap")
+	sl.Error("keep-error")
+	zl.Error("keep-zap")
+
+	require.Equal(t, 2, exp.n)
+}
+
+type captureExp struct {
+	n int
+}
+
+func (c *captureExp) Export(_ context.Context, records []sdklog.Record) error {
+	c.n += len(records)
+	return nil
+}
+
+func (*captureExp) Shutdown(context.Context) error { return nil }
+
+func (*captureExp) ForceFlush(context.Context) error { return nil }

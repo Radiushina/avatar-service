@@ -4,10 +4,16 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"log/slog"
+	"time"
 
 	"github.com/Radiushina/avatar-service/internal/broker"
 	"github.com/Radiushina/avatar-service/internal/entity"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
@@ -72,7 +78,25 @@ func NewService(repo RepoProvider, publisher Publisher, log *zap.Logger) *Servic
 	}
 }
 
-func (s *Service) Upload(ctx context.Context, in UploadInput) (entity.Avatar, error) {
+func (s *Service) Upload(ctx context.Context, in UploadInput) (_ entity.Avatar, err error) {
+	start := time.Now()
+	ctx, span := otel.Tracer("avatar-service").Start(ctx, "upload_avatar")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("user_id", in.UserID),
+		attribute.String("file_name", in.FileName),
+		attribute.Int64("file_size", int64(len(in.Body))),
+	)
+	defer func() {
+		status := "success"
+		if err != nil {
+			status = "error"
+			span.SetStatus(codes.Error, err.Error())
+		}
+		uploadsTotal.WithLabelValues(status).Inc()
+		uploadDuration.WithLabelValues(status).Observe(time.Since(start).Seconds())
+	}()
+
 	if in.UserID == "" {
 		return entity.Avatar{}, fmt.Errorf("%w: user_id is required", ErrInvalid)
 	}
@@ -89,6 +113,15 @@ func (s *Service) Upload(ctx context.Context, in UploadInput) (entity.Avatar, er
 	if mime == "" {
 		return entity.Avatar{}, fmt.Errorf("%w: supported formats: jpeg, png, webp", ErrInvalid)
 	}
+	logger := slog.With(
+		"service", "avatar-service",
+		"trace_id", trace.SpanFromContext(ctx).SpanContext().TraceID(),
+	)
+	logger.Info("uploading avatar",
+		"user_id", in.UserID,
+		"file_size", len(in.Body),
+		"mime_type", mime,
+	)
 
 	id := uuid.NewString()
 	key := fmt.Sprintf("avatars/%s/%s/original", in.UserID, id)

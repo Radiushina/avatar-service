@@ -1,8 +1,9 @@
-package avatars
+package avatars_test
 
 import (
 	"testing"
 
+	"github.com/Radiushina/avatar-service/internal/domains/avatars"
 	"github.com/Radiushina/avatar-service/internal/entity"
 	"github.com/stretchr/testify/require"
 )
@@ -10,7 +11,7 @@ import (
 func TestRepoSQL(t *testing.T) {
 	t.Parallel()
 
-	repo := NewAvatarRepo(nil, nil)
+	repo := avatars.NewAvatarRepo(nil, nil)
 	const (
 		id     = "1ca79251-f6e3-45a4-992f-404f6e4e13ed"
 		userID = "user-1"
@@ -25,7 +26,7 @@ func TestRepoSQL(t *testing.T) {
 		{
 			name: "uploads to publish",
 			query: func() (string, []any, error) {
-				return repo.uploadsToPublish().ToSQL()
+				return repo.UploadsToPublish().ToSQL()
 			},
 			contains: []string{
 				`"deleted_at" IS NULL`,
@@ -58,7 +59,7 @@ func TestRepoSQL(t *testing.T) {
 		{
 			name: "stored by id",
 			query: func() (string, []any, error) {
-				return repo.storedByID(id).ToSQL()
+				return repo.StoredByID(id).ToSQL()
 			},
 			contains: []string{
 				`"id"`,
@@ -75,7 +76,7 @@ func TestRepoSQL(t *testing.T) {
 		{
 			name: "avatars by user",
 			query: func() (string, []any, error) {
-				return repo.avatarsByUser(userID).ToSQL()
+				return repo.AvatarsByUser(userID).ToSQL()
 			},
 			contains: []string{
 				`"processing_status"`,
@@ -89,7 +90,7 @@ func TestRepoSQL(t *testing.T) {
 		{
 			name: "current avatar",
 			query: func() (string, []any, error) {
-				return repo.avatarsByUser(userID).Limit(1).ToSQL()
+				return repo.AvatarsByUser(userID).Limit(1).ToSQL()
 			},
 			contains: []string{
 				`"deleted_at" IS NULL`,
@@ -138,7 +139,7 @@ func TestDecodeThumbKeys(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := decodeThumbKeys(tt.raw)
+			got, err := avatars.DecodeThumbKeys(tt.raw)
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -154,12 +155,12 @@ func TestObjectKeys(t *testing.T) {
 
 	tests := []struct {
 		name   string
-		avatar StoredAvatar
+		avatar avatars.StoredAvatar
 		want   []string
 	}{
 		{
 			name: "original and known sizes",
-			avatar: StoredAvatar{
+			avatar: avatars.StoredAvatar{
 				S3Key: "orig",
 				Thumbnails: map[string]string{
 					"300x300": "med",
@@ -171,19 +172,19 @@ func TestObjectKeys(t *testing.T) {
 		},
 		{
 			name:   "original only",
-			avatar: StoredAvatar{S3Key: "orig"},
+			avatar: avatars.StoredAvatar{S3Key: "orig"},
 			want:   []string{"orig"},
 		},
 		{
 			name: "thumbnails only",
-			avatar: StoredAvatar{
+			avatar: avatars.StoredAvatar{
 				Thumbnails: map[string]string{"100x100": "smol"},
 			},
 			want: []string{"smol"},
 		},
 		{
 			name:   "nothing",
-			avatar: StoredAvatar{},
+			avatar: avatars.StoredAvatar{},
 			want:   []string{},
 		},
 	}
@@ -231,7 +232,7 @@ func TestThumbnailsFromKeys(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, tt.want, ThumbnailsFromKeys(tt.keys))
+			require.Equal(t, tt.want, avatars.ThumbnailsFromKeys(tt.keys))
 		})
 	}
 }

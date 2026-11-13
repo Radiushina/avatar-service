@@ -53,6 +53,20 @@ paths:
                   s3: down
                   broker: up
 
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      description: Текстовый формат Prometheus с эндпоинта, который читает ServiceMonitor.
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+
   /web/upload:
     get:
       summary: Upload form
@@ -131,6 +145,18 @@ paths:
       responses:
         '200':
           description: Gallery page
+          content:
+            text/html:
+              schema:
+                type: string
+        '400':
+          description: user_id is required
+          content:
+            text/html:
+              schema:
+                type: string
+        '500':
+          description: Could not load gallery
           content:
             text/html:
               schema:
@@ -218,6 +244,12 @@ paths:
           schema:
             type: string
             enum: [ jpeg, png, webp ]
+        - name: If-None-Match
+          in: header
+          required: false
+          description: ETag from a previous response. The same value returns 304.
+          schema:
+            type: string
       responses:
         '200':
           description: Avatar image
@@ -232,24 +264,33 @@ paths:
               schema:
                 type: string
                 example: '"a1b2c3d4e5f6"'
-            Content-Type:
-              description: Depends on format
+          content:
+            image/jpeg:
               schema:
                 type: string
-                enum: [ image/jpeg, image/png, image/webp ]
-            content:
-              image/jpeg:
-                schema:
-                  type: string
-                  format: binary
-              image/png:
-                schema:
-                  type: string
-                  format: binary
-              image/webp:
-                schema:
-                  type: string
-                  format: binary
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        '304':
+          description: Not modified
+        '400':
+          description: Invalid size or format
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ error ]
+                properties:
+                  error:
+                    type: string
+              example:
+                error: invalid size
         '404':
           description: Avatar not found
           content:
@@ -285,6 +326,18 @@ paths:
       responses:
         '204':
           description: Avatar deleted successfully
+        '400':
+          description: X-User-ID is required or avatar_id is not a UUID
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ error ]
+                properties:
+                  error:
+                    type: string
+              example:
+                error: "X-User-ID is required"
         '403':
           description: Forbidden — can only delete own avatars
           content:
@@ -390,8 +443,20 @@ paths:
                 id: "1ca79251-f6e3-45a4-992f-404f6e4e13ed"
                 user_id: "user-123"
                 url: "https://avatars-service/1ca79251-f6e3-45a4-992f-404f6e4e13ed/avatar"
-                status: "ready"
+                status: "completed"
                 created_at: "2024-01-01T00:00:00Z"
+        '400':
+          description: X-User-ID is required
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ error ]
+                properties:
+                  error:
+                    type: string
+              example:
+                error: "X-User-ID is required"
         '404':
           description: Avatar not found
           content:
@@ -426,6 +491,18 @@ paths:
       responses:
         '204':
           description: Avatar deleted successfully
+        '400':
+          description: X-User-ID or user_id is required
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ error ]
+                properties:
+                  error:
+                    type: string
+              example:
+                error: "X-User-ID is required"
         '403':
           description: Forbidden — can only delete own avatars
           content:
@@ -479,7 +556,7 @@ paths:
                 - id: "1ca79251-f6e3-45a4-992f-404f6e4e13ed"
                   user_id: "user-123"
                   url: "https://avatars-service/1ca79251-f6e3-45a4-992f-404f6e4e13ed/avatar"
-                  status: "ready"
+                  status: "completed"
                   created_at: "2024-01-01T00:00:00Z"
 
 components:
@@ -514,14 +591,6 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/UnsuccessfulResponse'
-          example: { "error": "not found" }
-
-    '500':
-      description: 'Internal server error'
-      content:
-        application/json:
-          schema:
             type: object
             required: [ error, max_size ]
             properties:
@@ -529,8 +598,18 @@ components:
                 type: string
               max_size:
                 type: integer
-                example: 10485760
-          example: { "error": "internal server error" }
+          example:
+            error: File too large
+            max_size: 10485760
+
+    '500':
+      description: 'Internal server error'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/UnsuccessfulResponse'
+          example:
+            error: internal error
 
   schemas:
     SuccessfulResponse:

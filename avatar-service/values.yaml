@@ -1,0 +1,93 @@
+# Три реплики приложения
+replicaCount: 3
+
+# Образ приложения
+image:
+  repository: avatar-service
+  pullPolicy: IfNotPresent
+  # Пустой тег: Deployment подставит .Chart.AppVersion.
+  tag: ""
+
+# Несекретные настройки S3. Ключи доступа и RABBITMQ_URL лежат в Secret avatar-secrets.
+config:
+  s3:
+    endpoint: ""
+    region: us-east-1
+    bucket: avatars
+
+# Service Account без токена Kubernetes API
+serviceAccount:
+  create: true
+  automount: false
+  name: ""
+
+# Атрибуты подов
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65534
+  runAsGroup: 65534
+  fsGroup: 65534
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# Service. Имя порта metrics нужно ServiceMonitor
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+  portName: metrics
+
+# CRD лежит в crds/ и ставится вместе с чартом.
+serviceMonitor:
+  enabled: true
+
+# Ingress
+ingress:
+  enabled: true
+  className: ""
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+  hosts:
+    - host: avatars.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  requests:
+    memory: 128Mi
+    cpu: 100m
+  limits:
+    memory: 512Mi
+    cpu: 500m
+
+# Пробы жизнеспособности
+livenessProbe:
+  httpGet:
+    path: /health
+    port: metrics
+  initialDelaySeconds: 30
+readinessProbe:
+  httpGet:
+    path: /health
+    port: metrics
+  initialDelaySeconds: 5
+
+# Горизонтальное автомасштабирование по CPU и памяти
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80

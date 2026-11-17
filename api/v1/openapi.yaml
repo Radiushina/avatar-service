@@ -52,6 +52,28 @@ paths:
                   database: up
                   s3: down
                   broker: up
+  /live:
+    get:
+      operationId: livecheck
+      summary: Liveness
+      description: |
+        Процесс отвечает на HTTP.
+        База, S3 и брокер не проверяются.
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Process is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    const: ok
+              example:
+                status: ok
 
   /metrics:
     get:

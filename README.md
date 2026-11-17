@@ -208,6 +208,36 @@ curl -fsS --resolve avatars.dev.example.com:80:127.0.0.1 http://avatars.dev.exam
 
 Ответ со статусом HTTP 200. В JSON поле `status` равно `ok`, компоненты `database`, `s3` и `broker` равны `up`.
 
+### Логи подов
+
+Лог пода читает `kubectl logs`. Сначала выведем список подов в namespace `avatars`:
+
+```bash
+kubectl get pods -n avatars
+```
+
+В списке две строки `avatar-service-...`. Это две копии одного сервиса: HPA поднимает вторую реплику. Имя из этой таблицы подставляют в команду, когда нужен лог только одного пода.
+
+Лог обоих подов одной командой. `-l app=avatar-service` отбирает поды с этой меткой, она стоит на обоих. `--prefix` печатает имя пода перед каждой строкой, так видно, какая копия её написала. `--tail=40` берёт последние 40 строк, не весь лог с момента старта.
+
+```bash
+kubectl logs -n avatars -l app=avatar-service --tail=40 --prefix
+```
+
+Лог одного пода. Имя берут из списка выше:
+
+```bash
+kubectl logs -n avatars avatar-service-...
+```
+
+Если контейнер уже перезапускали, эта команда показывает лог того запуска, который уже завершился:
+
+```bash
+kubectl logs -n avatars avatar-service-... --previous
+```
+
+Флаг `-n avatars` явно называет namespace. После шага 2 он уже выбран в контексте, и флаг можно не писать.
+
 ### Зависимости рядом с чартом
 
 PostgreSQL, MinIO и RabbitMQ поднимает `docker compose` на шаге 5. Из подов они видны как `host.rancher-desktop.internal`. Воркер миниатюр тоже запускает compose:

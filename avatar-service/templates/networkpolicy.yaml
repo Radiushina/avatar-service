@@ -46,7 +46,7 @@ spec:
             # If dependencies run on the cluster VM host rather than in separate namespaces, the egress rule needs the host's specific CIDR, not the whole address range.
             # Look up the gateway IP: rdctl shell -- grep host.lima.internal /etc/hosts
             # /32 means this single address.
-            cidr: 192.168.5.2/32
+            cidr: {{ .Values.networkPolicy.hostGatewayCIDR | quote }}
       ports:
         - protocol: TCP
           port: 5432

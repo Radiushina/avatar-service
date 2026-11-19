@@ -92,6 +92,11 @@ readinessProbe:
     port: metrics
   initialDelaySeconds: 5
 
+# Узнать: rdctl shell -- grep host.lima.internal /etc/hosts
+# Будет что-то: 192.168.5.2     host.lima.interna
+networkPolicy:
+  hostGatewayCIDR: 192.168.5.2/32
+
 # Горизонтальное автомасштабирование по CPU и памяти
 autoscaling:
   enabled: true

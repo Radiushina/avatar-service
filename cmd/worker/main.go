@@ -11,7 +11,9 @@ import (
 	"github.com/Radiushina/avatar-service/internal/broker"
 	"github.com/Radiushina/avatar-service/internal/domains/avatars"
 	applogger "github.com/Radiushina/avatar-service/internal/domains/logger"
+	"github.com/Radiushina/avatar-service/internal/telemetry"
 	"github.com/Radiushina/avatar-service/internal/worker"
+	"golang.org/x/sync/errgroup"
 )
 
 func main() {
@@ -23,6 +25,20 @@ func main() {
 func run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+
+	stopTelemetry, err := telemetry.InitTracerProvider(context.Background())
+	if err != nil {
+		applogger.LogStartupErr("tracer", err)
+		return fmt.Errorf("tracer: %w", err)
+	}
+	defer stopTelemetry()
+
+	stopLogs, err := telemetry.InitLogProvider(context.Background())
+	if err != nil {
+		applogger.LogStartupErr("logs", err)
+		return fmt.Errorf("logs: %w", err)
+	}
+	defer stopLogs()
 
 	cfg, err := providers.NewConfig()
 	if err != nil {
@@ -57,8 +73,18 @@ func run() error {
 	}
 
 	store := providers.NewS3Store(cfg)
-	w := worker.New(avatars.NewAvatarRepo(pool, store), store, worker.NewResizer(), client, publisher, log)
-	if err := w.Run(ctx); err != nil {
+	repo := avatars.NewAvatarRepo(pool, store)
+	w := worker.New(repo, store, worker.NewResizer(), client, publisher, log)
+
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		providers.CollectRuntimeMetrics(ctx, pool, repo, log)
+		return nil
+	})
+	g.Go(func() error {
+		return w.Run(ctx)
+	})
+	if err := g.Wait(); err != nil {
 		applogger.LogError(log, "run worker", err)
 		return fmt.Errorf("run worker: %w", err)
 	}

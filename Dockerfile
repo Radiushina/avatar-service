@@ -15,4 +15,6 @@ COPY --from=builder /app/server .
 COPY --from=builder /app/worker .
 COPY --from=builder /app/web ./web
 EXPOSE 8080
+# nobody в Alpine. Совпадает с runAsUser в k8s/deployment.yaml, порт 8080 ему доступен.
+USER 65534:65534
 CMD ["./server"]

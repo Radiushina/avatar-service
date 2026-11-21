@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/smithy-go"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
+	"go.opentelemetry.io/otel"
 )
 
 const maxAvatarBytes = 10 << 20
@@ -40,6 +41,8 @@ func NewS3Store(cfg *config.Config) *S3Store {
 }
 
 func (s *S3Store) Put(ctx context.Context, key, contentType string, body []byte) error {
+	ctx, span := otel.Tracer("avatar-service").Start(ctx, "s3_put")
+	defer span.End()
 	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:      aws.String(s.bucket),
 		Key:         aws.String(key),
@@ -53,6 +56,8 @@ func (s *S3Store) Put(ctx context.Context, key, contentType string, body []byte)
 }
 
 func (s *S3Store) Get(ctx context.Context, key string) (body []byte, err error) {
+	ctx, span := otel.Tracer("avatar-service").Start(ctx, "s3_get")
+	defer span.End()
 	out, err := s.client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(key),
@@ -89,6 +94,8 @@ func (s *S3Store) Ping(ctx context.Context) error {
 }
 
 func (s *S3Store) Delete(ctx context.Context, key string) error {
+	ctx, span := otel.Tracer("avatar-service").Start(ctx, "s3_delete")
+	defer span.End()
 	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(key),

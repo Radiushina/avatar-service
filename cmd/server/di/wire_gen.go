@@ -60,6 +60,8 @@ func InjectApp(ctx context.Context) (*App, func(), error) {
 		cfg:    config,
 		server: servers,
 		Log:    logger,
+		pool:   pool,
+		repo:   repo,
 	}
 	return app, func() {
 		cleanup3()

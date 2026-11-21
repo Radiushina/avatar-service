@@ -1,0 +1,31 @@
+# PodSecurityPolicy — ресурс всего кластера, namespaced Role на него не действует.
+# Поэтому право выдаётся через ClusterRole, а RoleBinding ниже
+# ограничивает его одним namespace и одним ServiceAccount.
+# Единственное право — use только политики этого релиза.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "avatar-service.fullname" . }}-psp
+  labels:
+    {{- include "avatar-service.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["policy"]
+    resources: ["podsecuritypolicies"]
+    verbs: ["use"]
+    resourceNames: ["{{ include "avatar-service.fullname" . }}"]
+---
+# Привязка: ServiceAccount этого релиза получает ClusterRole.
+# Без этой привязки admission отклонит под, если PodSecurityPolicy включена.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "avatar-service.fullname" . }}-psp
+  labels:
+    {{- include "avatar-service.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "avatar-service.fullname" . }}-psp
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "avatar-service.serviceAccountName" . }}

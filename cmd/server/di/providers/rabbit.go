@@ -14,7 +14,12 @@ func NewRabbit(cfg *config.Config, log *zap.Logger) (*broker.Client, func(), err
 	if err != nil {
 		return nil, nil, fmt.Errorf("rabbitmq: %w", err)
 	}
-	return client, client.Close, nil
+	stop := make(chan struct{})
+	go client.WatchQueueDepth(stop)
+	return client, func() {
+		close(stop)
+		client.Close()
+	}, nil
 }
 
 func NewPublisher(ctx context.Context, client *broker.Client) (*broker.Publisher, error) {

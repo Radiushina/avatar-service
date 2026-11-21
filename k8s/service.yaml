@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: avatar-service
+  labels:
+    app: avatar-service
+spec:
+  selector:
+    app: avatar-service
+  ports:
+    - name: metrics
+      port: 80
+      targetPort: 8080
+  type: ClusterIP
+  

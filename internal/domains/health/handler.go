@@ -43,6 +43,7 @@ func NewHealthCheckRouter(
 		log:    log,
 	}
 	group.GET("/health", r.check)
+	group.GET("/live", r.live)
 }
 
 func (h *healthCheckRouter) check(c *echo.Context) error {
@@ -63,6 +64,10 @@ func (h *healthCheckRouter) check(c *echo.Context) error {
 		Status:     status,
 		Components: components,
 	})
+}
+
+func (h *healthCheckRouter) live(c *echo.Context) error {
+	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (h *healthCheckRouter) status(

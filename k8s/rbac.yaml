@@ -1,0 +1,37 @@
+# Учётная запись пода. Сервис не вызывает Kubernetes API,
+# поэтому токен в под не монтируется — украсть его из контейнера нельзя.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: avatar-service
+automountServiceAccountToken: false
+---
+# PodSecurityPolicy — ресурс всего кластера, namespaced Role на него не действует.
+# Поэтому право выдаётся через ClusterRole, а RoleBinding ниже
+# ограничивает его одним namespace и одним ServiceAccount.
+# Единственное право — use только политики avatar-service.
+# Других глаголов (get/list/create) и других политик нет.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: avatar-service-psp
+rules:
+  - apiGroups: ["policy"]
+    resources: ["podsecuritypolicies"]
+    verbs: ["use"]
+    resourceNames: ["avatar-service"]
+---
+# Привязка: ServiceAccount avatar-service в текущем namespace
+# получает ClusterRole avatar-service-psp.
+# Без этой привязки admission отклонит под, если PodSecurityPolicy включена.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: avatar-service-psp
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: avatar-service-psp
+subjects:
+  - kind: ServiceAccount
+    name: avatar-service

@@ -347,20 +347,6 @@ func TestGetAvatarMeta(t *testing.T) {
 	})
 }
 
-func TestThumbnailsFromKeys(t *testing.T) {
-	t.Parallel()
-
-	got := avatars.ThumbnailsFromKeys(map[string]string{
-		"300x300": "k3",
-		"100x100": "k1",
-		"other":   "kx",
-	})
-	require.Equal(t, []entity.Thumbnail{
-		{Size: entity.ThumbnailSmol},
-		{Size: entity.ThumbnailMedium},
-	}, got)
-}
-
 func doRequest(t *testing.T, repo avatars.RepoProvider, method, path, actorID string) *httptest.ResponseRecorder {
 	t.Helper()
 

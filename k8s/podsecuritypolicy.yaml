@@ -1,0 +1,49 @@
+# Ограничения, которые admission проверяет до запуска пода.
+# С Kubernetes 1.25 этот тип ресурса удалён: на новом кластере apply не пройдёт.
+# Те же правила продублированы в securityContext деплоймента — они работают и без PSP.
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: avatar-service
+  annotations:
+    # Разрешён только seccomp-профиль по умолчанию у контейнерного рантайма.
+    seccomp.security.alpha.kubernetes.io/allowedProfileNames: runtime/default
+    seccomp.security.alpha.kubernetes.io/defaultProfileName: runtime/default
+spec:
+  # Под не может быть privileged и не может сам себе поднять привилегии.
+  privileged: false
+  allowPrivilegeEscalation: false
+  # Из контейнера убираются все Linux capabilities, включая NET_RAW.
+  requiredDropCapabilities:
+    - ALL
+  # hostPath нет в списке: смонтировать диск ноды нельзя.
+  volumes:
+    - configMap
+    - emptyDir
+    - projected
+    - secret
+    - downwardAPI
+    - persistentVolumeClaim
+  # Под не видит сеть, процессы и IPC ноды.
+  hostNetwork: false
+  hostIPC: false
+  hostPID: false
+  # uid 0 запрещён. В деплойменте стоит 65534 (nobody в Alpine).
+  runAsUser:
+    rule: MustRunAsNonRoot
+  # SELinux на кластере не настраиваем, правило просто обязано быть в спеке.
+  seLinux:
+    rule: RunAsAny
+  # Группы процесса и владельца томов — только из обычного диапазона, не root.
+  supplementalGroups:
+    rule: MustRunAs
+    ranges:
+      - min: 1
+        max: 65535
+  fsGroup:
+    rule: MustRunAs
+    ranges:
+      - min: 1
+        max: 65535
+  # Корень контейнера только для чтения. Сервис пишет логи в stdout и файлы не создаёт.
+  readOnlyRootFilesystem: true

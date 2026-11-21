@@ -9,6 +9,8 @@ import (
 
 	"github.com/Radiushina/avatar-service/cmd/server/di"
 	applogger "github.com/Radiushina/avatar-service/internal/domains/logger"
+	"github.com/Radiushina/avatar-service/internal/telemetry"
+	"golang.org/x/sync/errgroup"
 )
 
 func main() {
@@ -21,6 +23,20 @@ func run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
+	stopTelemetry, err := telemetry.InitTracerProvider(context.Background())
+	if err != nil {
+		applogger.LogStartupErr("tracer", err)
+		return fmt.Errorf("tracer: %w", err)
+	}
+	defer stopTelemetry()
+
+	stopLogs, err := telemetry.InitLogProvider(context.Background())
+	if err != nil {
+		applogger.LogStartupErr("logs", err)
+		return fmt.Errorf("logs: %w", err)
+	}
+	defer stopLogs()
+
 	app, cleanup, err := di.InjectApp(ctx)
 	if err != nil {
 		applogger.LogStartupErr("inject app", err)
@@ -28,7 +44,15 @@ func run() error {
 	}
 	defer cleanup()
 
-	if err := app.Run(ctx); err != nil {
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		app.CollectRuntimeMetrics(ctx)
+		return nil
+	})
+	g.Go(func() error {
+		return app.Run(ctx)
+	})
+	if err := g.Wait(); err != nil {
 		applogger.LogError(app.Log, "run app", err)
 		return fmt.Errorf("run app: %w", err)
 	}

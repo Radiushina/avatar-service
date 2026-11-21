@@ -10,3 +10,8 @@ api-build:
 
 lint:
 	golangci-lint run --config .golangci.yml
+
+test-goroutines:
+	go test -count=1 -timeout 90s \
+		-run 'TestCollectRuntimeMetricsExits|TestListenGoroutineExits|TestWatchQueueDepthExits|TestRunGoroutinesExit' \
+		./cmd/server/di/providers/ ./internal/broker/ ./internal/worker/
